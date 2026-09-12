@@ -1,0 +1,27 @@
+diff --git a/node_modules/@agentmail/convex/dist/component/convex.config.js b/node_modules/@agentmail/convex/dist/component/convex.config.js
+index 3d15ed6..93d078c 100644
+--- a/node_modules/@agentmail/convex/dist/component/convex.config.js
++++ b/node_modules/@agentmail/convex/dist/component/convex.config.js
+@@ -1,7 +1,19 @@
+ import { defineComponent } from "convex/server";
++import { v } from "convex/values";
+ import workpool from "@convex-dev/workpool/convex.config";
+-const component = defineComponent("agentmail");
++// PATCHED (2026-09-12, local only): the shipped 0.1.0 package never
++// declares its own environment variables, so Convex's component
++// isolation blocks AGENTMAIL_API_KEY from ever reaching this component's
++// actions (agentmailFetch in utils.js reads process.env.AGENTMAIL_API_KEY,
++// but a component only sees env vars it declares here). This is the same
++// pattern @firecrawl/firecrawl-convex's own convex.config.js already uses.
++// Needs re-applying (or patch-package) after any node_modules reinstall.
++const component = defineComponent("agentmail", {
++  env: {
++    AGENTMAIL_API_KEY: v.optional(v.string()),
++    AGENTMAIL_BASE_URL: v.optional(v.string()),
++  },
++});
+ component.use(workpool, { name: "sendPool" });
+ component.use(workpool, { name: "callbackPool" });
+ export default component;
+-//# sourceMappingURL=convex.config.js.map
+\ No newline at end of file

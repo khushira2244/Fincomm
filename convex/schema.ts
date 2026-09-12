@@ -112,13 +112,35 @@ export default defineSchema({
     balanceMinorUnits: v.number(),
     emiMinorUnits: v.number(),
     currency: v.string(), // FIXED: was missing currency entirely
-    interestRateBasisPoints: v.number(),
+    interestRateBasisPoints: v.number(), // legacy, Financial Foundation hardcodes 0
     dueDayOfMonth: v.number(),
     penaltyPolicy: v.optional(v.string()),
     maturityDate: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     createdByMemberId: v.id("memberships"),
+    // Loan & Debt Resilience (Session 1) — all optional. Absent means
+    // "not entered yet"; the service surfaces that as a missing-data
+    // warning rather than guessing. Integer rules enforced in the
+    // loanDebt.updateLoanDetails mutation, not here.
+    obligationType: v.optional(
+      v.union(
+        v.literal("homeLoan"),
+        v.literal("personalLoan"),
+        v.literal("vehicleLoan"),
+        v.literal("educationLoan"),
+        v.literal("other"),
+      ),
+    ),
+    annualRateBasisPoints: v.optional(v.number()), // authoritative rate; 0 = genuine zero-interest
+    rateType: v.optional(v.union(v.literal("fixed"), v.literal("floating"))),
+    remainingTenureMonths: v.optional(v.number()), // integer >= 1
+    originalPrincipalMinorUnits: v.optional(v.number()),
+    minimumPaymentMinorUnits: v.optional(v.number()),
+    feesMinorUnits: v.optional(v.number()),
+    prepaymentTerms: v.optional(v.string()), // free text — explained by AI, not parsed for the charge
+    nextResetDate: v.optional(v.number()), // floating-rate reset timestamp
+    sourceDocumentId: v.optional(v.id("documents")),
   }).index("by_household", ["householdId"]),
 
   assets: defineTable({
@@ -156,6 +178,13 @@ export default defineSchema({
       v.literal("abandoned"),
       v.literal("disputed"),
     ),
+    // Added for Goal & Situation Planning (Service #2). All optional —
+    // existing goals (there are none yet) and any future non-timeline
+    // goal remain valid.
+    timelineId: v.optional(v.id("timelines")),
+    positiveSteps: v.optional(v.array(v.string())),
+    negativeSteps: v.optional(v.array(v.string())),
+    horizon: v.optional(v.union(v.literal("shortTerm"), v.literal("longTerm"))),
   }).index("by_household", ["householdId"]),
 
   situations: defineTable({
@@ -166,6 +195,19 @@ export default defineSchema({
     durationDays: v.optional(v.number()),
     affectedMemberIds: v.array(v.id("memberships")),
     confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+    // Added for Goal & Situation Planning (Service #2). Optional —
+    // situationCategory routes a situation back to its Timeline-detail
+    // section (Health / Location / Side income / Misc / Family emergency).
+    timelineId: v.optional(v.id("timelines")),
+    situationCategory: v.optional(
+      v.union(
+        v.literal("familyEmergency"),
+        v.literal("health"),
+        v.literal("location"),
+        v.literal("sideIncome"),
+        v.literal("misc"),
+      ),
+    ),
   }).index("by_household", ["householdId"]),
 
   // ===================================================================
@@ -219,6 +261,10 @@ export default defineSchema({
     nextReviewAt: v.optional(v.number()),
     contentHash: v.optional(v.string()),
     supersedesSnapshotId: v.optional(v.id("sourceSnapshots")),
+    // Loan & Debt Resilience: the benchmark rate parsed deterministically
+    // (regex, never AI) from the scraped page. Optional — extraction can
+    // fail without breaking anything downstream.
+    extractedRateBasisPoints: v.optional(v.number()),
   }).index("by_source", ["sourceRegistryId"]),
 
   // ===================================================================
@@ -463,6 +509,257 @@ export default defineSchema({
     payloadHash: v.optional(v.string()),
     lastError: v.optional(v.string()),
   }).index("by_source_event", ["source", "externalEventId"]),
+
+  // ===================================================================
+  // GOAL & SITUATION PLANNING (Service #2) — additive. Timeline-scoped
+  // planning data lives entirely in its own tables and never touches
+  // Financial Foundation's expenses/obligations/runway (Option A).
+  // ===================================================================
+
+  timelines: defineTable({
+    householdId: v.id("households"),
+    label: v.string(), // "Timeline 1", "Timeline 2" — set sequentially at creation
+    yearsLabel: v.string(), // free text the user types, e.g. "Year 1-3"; starts ""
+    order: v.number(), // 1-based sequence position; = N at creation
+    createdAt: v.number(),
+    // Set false at creation; flipped true by the "Confirm & see my
+    // analysis" button on the timeline detail page. Only confirmed
+    // timelines feed plan analysis. Optional so the timelines created
+    // before this field existed still validate (they read as unconfirmed).
+    confirmed: v.optional(v.boolean()),
+  }).index("by_household", ["householdId"]),
+
+  // Family & Dependents > monthly support. Kept out of the expenses
+  // table so it can't leak into the current runway.
+  timelineFamilySupport: defineTable({
+    householdId: v.id("households"),
+    timelineId: v.id("timelines"),
+    label: v.string(),
+    monthlyCostMinorUnits: v.number(), // integer-enforced in mutation
+  }).index("by_household", ["householdId"]),
+
+  // Family & Dependents > yearly obligations (with a reason and a set
+  // number of years).
+  familyObligations: defineTable({
+    householdId: v.id("households"),
+    timelineId: v.id("timelines"),
+    label: v.string(),
+    costPerYearMinorUnits: v.number(), // integer-enforced in mutation
+    forHowManyYears: v.number(), // integer-enforced (whole years)
+    reason: v.optional(v.string()),
+  }).index("by_household", ["householdId"]),
+
+  // Loans planned within a timeline. Kept out of the obligations table
+  // so it can't leak into the current runway's EMI total.
+  timelineLoans: defineTable({
+    householdId: v.id("households"),
+    timelineId: v.id("timelines"),
+    label: v.string(),
+    outstandingBalanceMinorUnits: v.number(), // integer-enforced in mutation
+    emiMinorUnits: v.number(), // integer-enforced in mutation
+  }).index("by_household", ["householdId"]),
+
+  // A dismissed suggestion never reappears for this
+  // household + timeline + suggestionKey.
+  suggestionDismissals: defineTable({
+    householdId: v.id("households"),
+    timelineId: v.id("timelines"),
+    suggestionKey: v.string(),
+    dismissedAt: v.number(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_household_timeline_key", ["householdId", "timelineId", "suggestionKey"]),
+
+  // Cached plan analyses. Keyed on the exact set of confirmed timelines
+  // that were included (so {T1} and {T1,T2} are distinct cache entries)
+  // plus the household stateRevision at generation time — a match on
+  // both means the cached result is still current, no fresh OpenAI call.
+  planAnalyses: defineTable({
+    householdId: v.id("households"),
+    timelineIds: v.array(v.id("timelines")), // stored sorted
+    inputStateRevision: v.number(),
+    result: v.any(), // { verdict, categories, whatIfChips, deterministic }
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  // Loan & Debt Resilience decision history. Unlike planAnalyses, rows
+  // here are NEVER pruned or overwritten — every generation inserts a
+  // new version. A cache hit is the most-recent row matching
+  // householdId + analysisType + obligationId + inputHash whose
+  // inputStateRevision equals the household's current stateRevision.
+  // "overview" is not persisted in Session 1 (pure live query).
+  loanAnalyses: defineTable({
+    householdId: v.id("households"),
+    obligationId: v.optional(v.id("obligations")), // set for "prepayment"; absent for "affordability"
+    analysisType: v.union(
+      v.literal("affordability"),
+      v.literal("prepayment"),
+      v.literal("prepaymentTarget"), // reverse mode: solve for the payment given a target payoff date
+      v.literal("overview"),
+    ),
+    inputHash: v.string(), // stable hash of the deterministic inputs
+    inputStateRevision: v.number(),
+    result: v.any(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  // ===================================================================
+  // SIDE-INCOME & BUSINESS PLANNING (Service #5). Reuses sourceRegistry /
+  // sourceSnapshots (defined above, under Loan & Debt) for all
+  // Firecrawl-backed data — those two tables aren't household-scoped, so
+  // raw search/scrape snapshots can be shared across households while
+  // the generated, personalized results below (sideIncomeOpportunities,
+  // sideIncomeDeepDives) stay scoped per household + entry.
+  // ===================================================================
+
+  sideIncomeEntries: defineTable({
+    householdId: v.id("households"),
+    timelineId: v.optional(v.id("timelines")), // optional link into Goal & Situation Planning
+    kind: v.union(v.literal("job"), v.literal("business")),
+    source: v.union(v.literal("userDeclared"), v.literal("routedFromLoanDebt")),
+    routedGapMinorUnits: v.optional(v.number()), // pre-filled target if routed from a Loan & Debt shortfall
+    status: v.union(
+      v.literal("exploring"),
+      v.literal("selected"),
+      v.literal("active"),
+      v.literal("graduated"),
+    ),
+    // Deliberately separate from `status` — status is plan progress,
+    // earningsEvidence is proof of real money received. An entry can be
+    // "active" with "none" evidence. Graduating into a real Financial
+    // Foundation incomeSources row requires earningsEvidence to be at
+    // least "repeatedSelfReported" — enforced in the mutation, never
+    // derived from status alone.
+    earningsEvidence: v.union(
+      v.literal("none"),
+      v.literal("selfReportedFirstPayment"),
+      v.literal("repeatedSelfReported"),
+      v.literal("confirmedViaDocumentIntelligence"),
+    ),
+    // Job-specific — only meaningful when kind === "job"; enforced by
+    // mutation-level checks, not by this optionality alone.
+    typeOfWork: v.optional(v.string()),
+    hoursPerWeek: v.optional(v.number()),
+    availabilityWindow: v.optional(v.string()),
+    rateKnown: v.optional(v.boolean()),
+    rateMinorUnitsPerHour: v.optional(v.number()),
+    targetAmountMinorUnits: v.optional(v.number()),
+    calcMode: v.optional(v.union(v.literal("timeFirst"), v.literal("incomeFirst"))),
+    // Business-specific — only meaningful when kind === "business"; same
+    // enforcement note as above.
+    ideaDescription: v.optional(v.string()),
+    startupCapitalMinorUnits: v.optional(v.number()),
+    effortHoursPerWeek: v.optional(v.number()),
+    rampUpMonths: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_household_kind", ["householdId", "kind"]),
+
+  sideIncomeOpportunities: defineTable({
+    householdId: v.id("households"),
+    sideIncomeEntryId: v.optional(v.id("sideIncomeEntries")),
+    title: v.string(),
+    mode: v.union(v.literal("online"), v.literal("offline")),
+    fitHoursPerWeek: v.number(),
+    estimateLowMinorUnits: v.number(),
+    estimateHighMinorUnits: v.number(),
+    isRoughEstimate: v.boolean(),
+    sourceSnapshotId: v.optional(v.id("sourceSnapshots")), // Loan & Debt's Firecrawl pattern
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_entry", ["sideIncomeEntryId"]),
+
+  sideIncomeCombinedPlans: defineTable({
+    householdId: v.id("households"),
+    opportunityIds: v.array(v.id("sideIncomeOpportunities")),
+    totalHoursPerWeek: v.number(),
+    totalIncomeLowMinorUnits: v.number(),
+    totalIncomeHighMinorUnits: v.number(),
+    hasTimeConflict: v.boolean(),
+    hasShortfallVsTarget: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  sideIncomeDeepDives: defineTable({
+    householdId: v.id("households"),
+    sideIncomeEntryId: v.optional(v.id("sideIncomeEntries")),
+    opportunityId: v.optional(v.id("sideIncomeOpportunities")),
+    topic: v.union(
+      // job
+      v.literal("howToStart"),
+      v.literal("whereToApply"),
+      v.literal("challenges"),
+      v.literal("resources"),
+      v.literal("motivation"),
+      v.literal("blogs"),
+      // business
+      v.literal("ideaViability"),
+      v.literal("startupCapital"),
+      v.literal("schemeEligibility"),
+      v.literal("localViability"),
+      v.literal("maturityPath"),
+    ),
+    result: v.any(),
+    sourceSnapshotIds: v.array(v.id("sourceSnapshots")),
+    inputStateRevision: v.number(),
+    // Latest retrieval timestamp among the sources used. A cached row is
+    // valid only if inputStateRevision matches current AND now - this <
+    // 24h — same threshold Loan & Debt uses for its rate snapshot.
+    sourceSnapshotFreshAt: v.number(),
+    createdAt: v.number(),
+  }).index("by_household_entry_topic", ["householdId", "sideIncomeEntryId", "topic"]),
+
+  sideIncomeAskSessions: defineTable({
+    householdId: v.id("households"),
+    sideIncomeEntryId: v.id("sideIncomeEntries"),
+    // The two questions are fixed multiple-choice in the UI; the
+    // mutation validates each answer against that fixed choice set.
+    // Stored as strings (the chosen option's key) rather than schema
+    // -level literals so question wording can change without a migration.
+    question1Answer: v.string(),
+    question2Answer: v.string(),
+    generatedPlanText: v.string(),
+    depthLevel: v.number(), // 1-6, cosmetic tiering only — no paywall enforcement
+    createdAt: v.number(),
+  })
+    .index("by_entry", ["sideIncomeEntryId"])
+    .index("by_household", ["householdId"]),
+
+  schemeEligibilityChecks: defineTable({
+    householdId: v.id("households"),
+    sideIncomeEntryId: v.id("sideIncomeEntries"),
+    // Gender/state/incomeSlab are deliberately NOT fields here. They're
+    // collected in the UI for one search/matching call and discarded —
+    // never written to any table.
+    matchedSchemes: v.array(
+      v.object({
+        name: v.string(),
+        sourceUrl: v.string(),
+        retrievedAt: v.number(),
+        note: v.string(), // e.g. "possibly eligible — verify these conditions", never "confirmed"
+      }),
+    ),
+    checkedAt: v.number(),
+  })
+    .index("by_entry", ["sideIncomeEntryId"])
+    .index("by_household", ["householdId"]),
+
+  humanConsultRequests: defineTable({
+    householdId: v.id("households"),
+    sideIncomeEntryId: v.id("sideIncomeEntries"),
+    topic: v.string(),
+    // Fixed literal, not a union — this hackathon only ever logs
+    // interest; there's no real scheduling process, so
+    // "scheduled"/"completed" can't even be written.
+    status: v.literal("interest_logged"),
+    requestedAt: v.number(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_entry", ["sideIncomeEntryId"]),
 });
 
 // =====================================================================

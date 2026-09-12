@@ -4,36 +4,53 @@ import { api } from "../../convex/_generated/api";
 import { Avatar } from "./Avatar";
 import { colors, fontSans, fontSerif, SIDEBAR_WIDTH } from "../theme";
 
-type ServiceGroup = {
-  title: string;
-  services: string[];
-};
+export type ServiceKey = "financialFoundation" | "goalPlanning" | "loanDebt" | "sideIncome";
 
-// Only "Financial Foundation" (group 0, service 0) is real. Everything
-// else is a placeholder for services that don't exist yet.
+type ServiceEntry = { name: string; key?: ServiceKey }; // key present => real, clickable
+type ServiceGroup = { title: string; services: ServiceEntry[] };
+
+// Only "Financial Foundation" and "Goal & Situation Planning" are real.
+// Everything else is a placeholder for services that don't exist yet.
 const GROUPS: ServiceGroup[] = [
-  { title: "Foundation", services: ["Financial Foundation", "Goal & Situation Planning"] },
+  {
+    title: "Foundation",
+    services: [
+      { name: "Financial Foundation", key: "financialFoundation" },
+      { name: "Goal & Situation Planning", key: "goalPlanning" },
+    ],
+  },
   {
     title: "Income & Work",
     services: [
-      "Income Resilience",
-      "Side-Income & Business Planning",
-      "Economic & Role-Change Intelligence",
+      { name: "Income Resilience" },
+      { name: "Side-Income & Business Planning", key: "sideIncome" },
+      { name: "Economic & Role-Change Intelligence" },
     ],
   },
   {
     title: "Debt & Protection",
-    services: ["Loan & Debt Guidance", "Tax Planning", "Insurance & Protection"],
+    services: [
+      { name: "Loan & Debt Resilience", key: "loanDebt" },
+      { name: "Tax Planning" },
+      { name: "Insurance & Protection" },
+    ],
   },
   {
     title: "Growth & Rights",
-    services: ["Investment & Risk Planning", "Rights & Government Opportunities"],
+    services: [
+      { name: "Investment & Risk Planning" },
+      { name: "Rights & Government Opportunities" },
+    ],
   },
 ];
 
-const ACTIVE_SERVICE = "Financial Foundation";
-
-export function Sidebar() {
+export function Sidebar({
+  activeKey,
+  onNavigate,
+}: {
+  activeKey: ServiceKey;
+  onNavigate: (key: ServiceKey) => void;
+}) {
   const me = useQuery(api.users.getCurrentUser);
   const mine = useQuery(api.households.getMine);
   const [openGroups, setOpenGroups] = useState<Set<number>>(() => new Set([0]));
@@ -97,6 +114,8 @@ export function Sidebar() {
             group={group}
             open={openGroups.has(i)}
             onToggle={() => toggleGroup(i)}
+            activeKey={activeKey}
+            onNavigate={onNavigate}
           />
         ))}
       </div>
@@ -108,10 +127,14 @@ function SidebarGroup({
   group,
   open,
   onToggle,
+  activeKey,
+  onNavigate,
 }: {
   group: ServiceGroup;
   open: boolean;
   onToggle: () => void;
+  activeKey: ServiceKey;
+  onNavigate: (key: ServiceKey) => void;
 }) {
   return (
     <div>
@@ -140,7 +163,12 @@ function SidebarGroup({
       {open && (
         <ul style={{ listStyle: "none", margin: 0, padding: "0 0 8px" }}>
           {group.services.map((service) => (
-            <ServiceItem key={service} name={service} active={service === ACTIVE_SERVICE} />
+            <ServiceItem
+              key={service.name}
+              service={service}
+              active={service.key !== undefined && service.key === activeKey}
+              onNavigate={onNavigate}
+            />
           ))}
         </ul>
       )}
@@ -148,7 +176,15 @@ function SidebarGroup({
   );
 }
 
-function ServiceItem({ name, active }: { name: string; active: boolean }) {
+function ServiceItem({
+  service,
+  active,
+  onNavigate,
+}: {
+  service: ServiceEntry;
+  active: boolean;
+  onNavigate: (key: ServiceKey) => void;
+}) {
   if (active) {
     return (
       <li>
@@ -162,7 +198,26 @@ function ServiceItem({ name, active }: { name: string; active: boolean }) {
             cursor: "default",
           }}
         >
-          {name}
+          {service.name}
+        </div>
+      </li>
+    );
+  }
+
+  if (service.key !== undefined) {
+    const key = service.key;
+    return (
+      <li>
+        <div
+          onClick={() => onNavigate(key)}
+          style={{
+            padding: "8px 20px",
+            color: colors.cream,
+            fontSize: "14px",
+            cursor: "pointer",
+          }}
+        >
+          {service.name}
         </div>
       </li>
     );
@@ -184,7 +239,7 @@ function ServiceItem({ name, active }: { name: string; active: boolean }) {
           pointerEvents: "none",
         }}
       >
-        <span>{name}</span>
+        <span>{service.name}</span>
         <span
           style={{
             fontSize: "10px",

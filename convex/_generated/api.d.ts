@@ -15,11 +15,15 @@ import type * as documentIntelligence from "../documentIntelligence.js";
 import type * as email from "../email.js";
 import type * as expenses from "../expenses.js";
 import type * as extractedFacts from "../extractedFacts.js";
+import type * as goalPlanning from "../goalPlanning.js";
 import type * as households from "../households.js";
 import type * as http from "../http.js";
 import type * as incomeSources from "../incomeSources.js";
+import type * as loanDebt from "../loanDebt.js";
 import type * as obligations from "../obligations.js";
+import type * as planAnalysis from "../planAnalysis.js";
 import type * as runway from "../runway.js";
+import type * as sideIncome from "../sideIncome.js";
 import type * as users from "../users.js";
 
 import type {
@@ -36,11 +40,15 @@ declare const fullApi: ApiFromModules<{
   email: typeof email;
   expenses: typeof expenses;
   extractedFacts: typeof extractedFacts;
+  goalPlanning: typeof goalPlanning;
   households: typeof households;
   http: typeof http;
   incomeSources: typeof incomeSources;
+  loanDebt: typeof loanDebt;
   obligations: typeof obligations;
+  planAnalysis: typeof planAnalysis;
   runway: typeof runway;
+  sideIncome: typeof sideIncome;
   users: typeof users;
 }>;
 
