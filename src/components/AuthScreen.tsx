@@ -45,6 +45,12 @@ const SERVICES: { title: string; description: string }[] = [
   { title: "Income Resilience", description: "The full picture — how exposed your household really is, and what to do about it." },
 ];
 
+const MECHANISM_CARDS: { name: string; eyebrow: string; description: string }[] = [
+  { name: "Convex", eyebrow: "Backend & live state", description: "Every number you enter updates live, everywhere it's used — your runway, your loan checks, your plan." },
+  { name: "Firecrawl", eyebrow: "Real, sourced data", description: "Actual RBI rates, IRDAI rules, and tax slabs — scraped, dated, and shown as context, not guessed." },
+  { name: "OpenAI", eyebrow: "Explains, never decides", description: "Turns the real numbers into plain language — it narrates the math, it never invents it." },
+];
+
 export function AuthScreen() {
   const [formFlow, setFormFlow] = useState<"signIn" | "signUp" | null>(null);
 
@@ -61,35 +67,67 @@ export function AuthScreen() {
           alignItems: "center",
           padding: "16px 32px",
           borderBottom: `1px solid ${colors.sageGreen}`,
+          position: "sticky",
+          top: 0,
+          background: "rgba(246, 241, 228, 0.92)",
+          backdropFilter: "blur(6px)",
+          zIndex: 10,
         }}
       >
         <Logo dark wordmarkSize={20} />
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button style={navGhostButtonStyle} onClick={() => setFormFlow("signIn")}>
-            Sign in
-          </button>
-          <button style={navPrimaryButtonStyle} onClick={() => setFormFlow("signUp")}>
-            Sign up
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "28px" }}>
+          <div className="hidden sm:flex" style={{ gap: "24px" }}>
+            <a href="#services" style={navLinkStyle} className="hover:opacity-70 transition-opacity">
+              Services
+            </a>
+            <a href="#mechanism" style={navLinkStyle} className="hover:opacity-70 transition-opacity">
+              How it's built
+            </a>
+          </div>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button
+              style={navGhostButtonStyle}
+              className="hover:shadow-md transition-shadow"
+              onClick={() => setFormFlow("signIn")}
+            >
+              Sign in
+            </button>
+            <button
+              style={navPrimaryButtonStyle}
+              className="hover:opacity-90 hover:shadow-md transition-all"
+              onClick={() => setFormFlow("signUp")}
+            >
+              Sign up
+            </button>
+          </div>
         </div>
       </nav>
 
-      <div style={{ maxWidth: "920px", margin: "0 auto", padding: "64px 24px 24px", textAlign: "center" }}>
-        <h1 style={{ fontFamily: fontSerif, fontStyle: "italic", fontSize: "34px", lineHeight: 1.35, margin: "0 0 16px", color: colors.ink }}>
-          &ldquo;One place to see what a decision really means for your household.&rdquo;
-        </h1>
-        <p style={{ fontSize: "15px", color: colors.inkSoft, maxWidth: "600px", margin: "0 auto 28px" }}>
-          Financial Foundation, goals, loans, income, insurance, tax, and more — connected, not scattered across apps.
-        </p>
-        <button style={heroButtonStyle} onClick={() => setFormFlow("signUp")}>
-          Get started
-        </button>
+      <div
+        style={{
+          background: `radial-gradient(ellipse 60% 50% at 50% 0%, ${colors.sageGreen}33, transparent)`,
+        }}
+      >
+        <div style={{ maxWidth: "920px", margin: "0 auto", padding: "72px 24px 32px", textAlign: "center" }}>
+          <div style={eyebrowStyle}>FinComp</div>
+          <h1 style={{ fontFamily: fontSerif, fontStyle: "italic", fontSize: "36px", lineHeight: 1.35, margin: "0 0 16px", color: colors.ink }}>
+            &ldquo;One place to see what a decision really means for your household.&rdquo;
+          </h1>
+          <p style={{ fontSize: "15px", color: colors.inkSoft, maxWidth: "600px", margin: "0 auto 28px" }}>
+            Financial Foundation, goals, loans, income, insurance, tax, and more — connected, not scattered across apps.
+          </p>
+          <button
+            style={heroButtonStyle}
+            className="hover:opacity-90 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+            onClick={() => setFormFlow("signUp")}
+          >
+            Get started
+          </button>
+        </div>
       </div>
 
-      <div style={{ maxWidth: "920px", margin: "0 auto", padding: "48px 24px 64px" }}>
-        <div style={{ textAlign: "center", fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.inkSoft, marginBottom: "20px" }}>
-          What FinComp helps with
-        </div>
+      <div id="services" style={{ maxWidth: "920px", margin: "0 auto", padding: "48px 24px 64px", scrollMarginTop: "80px" }}>
+        <div style={eyebrowStyle}>What FinComp helps with</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
           {SERVICES.map((s) => (
             <div
@@ -101,6 +139,7 @@ export function AuthScreen() {
                 padding: "18px 20px",
                 textAlign: "left",
               }}
+              className="hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
             >
               <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "15px", color: colors.deepGreen, marginBottom: "6px" }}>{s.title}</div>
               <div style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.45 }}>{s.description}</div>
@@ -108,6 +147,91 @@ export function AuthScreen() {
           ))}
         </div>
       </div>
+
+      <div id="mechanism" style={{ background: colors.creamDim, borderTop: `1px solid ${colors.sageGreen}`, scrollMarginTop: "64px" }}>
+        <div style={{ maxWidth: "920px", margin: "0 auto", padding: "56px 24px 64px" }}>
+          <div style={{ textAlign: "center", marginBottom: "36px" }}>
+            <div style={eyebrowStyle}>The mechanism</div>
+            <h2 style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "26px", margin: 0, color: colors.ink }}>
+              One real number, checked from four directions.
+            </h2>
+          </div>
+
+          <div
+            style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "16px", alignItems: "stretch" }}
+          >
+            {MECHANISM_CARDS.map((card, i) => (
+              <div key={card.name} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div
+                  style={{
+                    background: "#ffffff",
+                    border: `1px solid ${colors.sageGreen}`,
+                    borderRadius: radius,
+                    padding: "18px 20px",
+                    textAlign: "left",
+                    flex: 1,
+                  }}
+                  className="hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+                >
+                  <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "15px", color: colors.deepGreen, marginBottom: "4px" }}>{card.name}</div>
+                  <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: colors.midGreen, marginBottom: "8px" }}>
+                    {card.eyebrow}
+                  </div>
+                  <div style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.45 }}>{card.description}</div>
+                </div>
+                {i < MECHANISM_CARDS.length - 1 && (
+                  <div className="hidden md:block" style={{ color: colors.sageGreen, fontSize: "20px", flexShrink: 0 }}>
+                    →
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              background: "#ffffff",
+              border: `1px solid ${colors.sageGreen}`,
+              borderRadius: radius,
+              padding: "18px 20px",
+              textAlign: "left",
+              marginBottom: "24px",
+            }}
+            className="hover:shadow-lg transition-shadow duration-200"
+          >
+            <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "15px", color: colors.deepGreen, marginBottom: "4px" }}>AgentMail</div>
+            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: colors.midGreen, marginBottom: "8px" }}>
+              In and out, both real
+            </div>
+            <div style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.45 }}>
+              Forward a bill and it's read automatically. When something changes, we email you first — unprompted.
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: colors.deepGreen,
+              borderRadius: radius,
+              padding: "24px 28px",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.sageGreen, marginBottom: "10px" }}>
+              Core principle
+            </div>
+            <div style={{ fontFamily: fontSerif, fontSize: "17px", lineHeight: 1.5, color: colors.cream, maxWidth: "620px", margin: "0 auto" }}>
+              Every calculation is deterministic. AI only explains, extracts, and narrates — it never invents a number, a rate, or advice.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer style={{ borderTop: `1px solid ${colors.sageGreen}`, padding: "28px 24px", textAlign: "center" }}>
+        <div style={{ marginBottom: "6px" }}>
+          <Logo dark wordmarkSize={15} taglineSize={10} />
+        </div>
+        <div style={{ fontSize: "12px", color: colors.inkSoft }}>Built for the Convex All Gas Hackathon.</div>
+      </footer>
     </div>
   );
 }
@@ -181,6 +305,24 @@ function SignInForm({ initialFlow }: { initialFlow: "signIn" | "signUp" }) {
     </div>
   );
 }
+
+const navLinkStyle: React.CSSProperties = {
+  fontFamily: fontSans,
+  fontWeight: 600,
+  fontSize: "13px",
+  color: colors.ink,
+  textDecoration: "none",
+};
+
+const eyebrowStyle: React.CSSProperties = {
+  textAlign: "center",
+  fontSize: "11px",
+  fontWeight: 700,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: colors.midGreen,
+  marginBottom: "12px",
+};
 
 const navGhostButtonStyle: React.CSSProperties = {
   fontFamily: fontSans,
