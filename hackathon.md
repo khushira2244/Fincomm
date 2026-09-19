@@ -1777,6 +1777,25 @@ dropdown with the real email, real household name, and "Sign out";
 clicking "Sign out" from inside the dropdown correctly signs out and
 routes to the landing page. Only `Header.tsx` changed.
 
+### 2026-09-19 (docs) — Per-service docs + Mermaid architecture diagram
+Documentation only, no code changed. Added `docs/services/` — one doc
+per service (`financial-foundation.md` through `income-resilience.md`,
+plus an index `docs/services/README.md`), each stating what the service
+does, exactly how its numbers are computed (the deterministic core:
+formulas, thresholds, cache keys), and precisely where AI is used and
+why — written from this log's own verified evidence, not re-derived
+from reading source. `README.md`'s service list now links each entry to
+its doc. Replaced the ASCII architecture diagram with an equivalent
+Mermaid flowchart (GitHub renders Mermaid natively in README.md) showing
+the same real flow: frontend → Convex queries/mutations (deterministic
+logic) and actions (OpenAI narration/extraction, Firecrawl real sourced
+data) and HTTP actions (AgentMail in/out, plus the custom `*.convex.site`
+static-file serving).
+
+Checked `AGENTS.md`: it's the real, auto-generated Convex agent-guidance
+file (`npx convex ai-files install`), still accurate for this project —
+kept as-is, not scaffold junk to remove.
+
 ### 2026-09-19 — Real static hosting on *.convex.site, dev-verified
 Convex genuinely has no static-hosting product (re-confirmed directly
 against `docs.convex.dev/functions/http-actions`, which states HTTP
