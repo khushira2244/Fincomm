@@ -1796,6 +1796,32 @@ Checked `AGENTS.md`: it's the real, auto-generated Convex agent-guidance
 file (`npx convex ai-files install`), still accurate for this project —
 kept as-is, not scaffold junk to remove.
 
+### 2026-09-19 (docs, later) — README restructure: story before stack
+Documentation only, no code changed. Rewrote `README.md`'s framing per
+explicit feedback that the product story should come before the
+technical detail and that "The 9 services" implied an unverified claim.
+Added: a "Why I built it" section, a "How FinComp is different"
+section naming coordination (not calculators) as the actual
+differentiator, "The connected service model" (renamed from "The 9
+services", with an explicit "every service below is built and verified"
+statement since that's what the evidence in this log actually shows —
+no service needed a lower status label), a Document Intelligence
+"shared intelligence layer" callout (previously missing from the
+service list entirely, despite being one of the most-verified
+capabilities), a daily-life-question table, expanded sponsor-technology
+sections written from real workflows (not a flat tech-stack list) for
+Convex/Firecrawl/AgentMail/OpenAI, and a 9-step "when income stops"
+worked example.
+
+One honesty correction made while writing the sponsor sections: the
+Live demo section now explicitly flags that production's env vars
+haven't been reconfirmed as set since the production push (last known:
+zero set) — so AI/sourced-data/email features are proven working on dev
+but not yet reconfirmed on the live `*.convex.site` URL specifically.
+Firecrawl's section was also narrowed to name only the specific
+allowlisted pages actually scraped per feature, not "every government
+source," per the same standard already used throughout this log.
+
 ### 2026-09-19 — Real static hosting on *.convex.site, dev-verified
 Convex genuinely has no static-hosting product (re-confirmed directly
 against `docs.convex.dev/functions/http-actions`, which states HTTP
