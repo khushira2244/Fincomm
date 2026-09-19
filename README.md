@@ -4,6 +4,9 @@
 
 ## What it is
 
+<img width="956" height="470" alt="image" src="https://github.com/user-attachments/assets/b8df27da-4606-461c-ba5a-7142c4a710b6" />
+
+
 FinComp is a goal- and situation-aware financial platform for Indian
 households, connecting income, debt, goals, investments, insurance, tax,
 and real economic signals in one place instead of scattering them across
