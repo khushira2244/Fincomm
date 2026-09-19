@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import schema from "./schema";
 import { assertIntegerMinorUnits, bumpStateRevision, requireMembership } from "./access";
@@ -38,6 +38,53 @@ export const addAsset = mutation({
     });
     await bumpStateRevision(ctx, membership.householdId);
     return id;
+  },
+});
+
+export const updateAsset = mutation({
+  args: {
+    assetId: v.id("assets"),
+    label: v.string(),
+    valueMinorUnits: v.number(), // MUST be an integer — enforced below
+    currency: v.string(),
+    liquidity: v.union(
+      v.literal("liquid"),
+      v.literal("semiLiquid"),
+      v.literal("illiquid"),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertIntegerMinorUnits(args.valueMinorUnits, "valueMinorUnits");
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("assets", args.assetId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Asset not found.");
+    }
+    await ctx.db.patch(args.assetId, {
+      label: args.label,
+      valueMinorUnits: args.valueMinorUnits,
+      currency: args.currency,
+      liquidity: args.liquidity,
+      updatedAt: Date.now(),
+    });
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const deleteAsset = mutation({
+  args: { assetId: v.id("assets") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("assets", args.assetId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Asset not found.");
+    }
+    await ctx.db.delete(args.assetId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
   },
 });
 

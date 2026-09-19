@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
-import { Avatar } from "./Avatar";
-import { colors, fontSans, fontSerif, SIDEBAR_WIDTH } from "../theme";
+import { colors, fontSans, SIDEBAR_WIDTH } from "../theme";
 
-export type ServiceKey = "financialFoundation" | "goalPlanning" | "loanDebt" | "sideIncome";
+export type ServiceKey = "financialFoundation" | "goalPlanning" | "loanDebt" | "sideIncome" | "investment" | "insurance" | "tax" | "governmentEconomic" | "incomeResilience";
 
 type ServiceEntry = { name: string; key?: ServiceKey }; // key present => real, clickable
 type ServiceGroup = { title: string; services: ServiceEntry[] };
@@ -22,23 +19,23 @@ const GROUPS: ServiceGroup[] = [
   {
     title: "Income & Work",
     services: [
-      { name: "Income Resilience" },
+      { name: "Income Resilience", key: "incomeResilience" },
       { name: "Side-Income & Business Planning", key: "sideIncome" },
-      { name: "Economic & Role-Change Intelligence" },
+      { name: "Government, Economic & Livelihood Intelligence", key: "governmentEconomic" },
     ],
   },
   {
     title: "Debt & Protection",
     services: [
       { name: "Loan & Debt Resilience", key: "loanDebt" },
-      { name: "Tax Planning" },
-      { name: "Insurance & Protection" },
+      { name: "Tax Planning", key: "tax" },
+      { name: "Insurance, Protection & Financial Rights", key: "insurance" },
     ],
   },
   {
     title: "Growth & Rights",
     services: [
-      { name: "Investment & Risk Planning" },
+      { name: "Investment & Risk Planning", key: "investment" },
       { name: "Rights & Government Opportunities" },
     ],
   },
@@ -51,8 +48,6 @@ export function Sidebar({
   activeKey: ServiceKey;
   onNavigate: (key: ServiceKey) => void;
 }) {
-  const me = useQuery(api.users.getCurrentUser);
-  const mine = useQuery(api.households.getMine);
   const [openGroups, setOpenGroups] = useState<Set<number>>(() => new Set([0]));
 
   const toggleGroup = (index: number) => {
@@ -72,7 +67,6 @@ export function Sidebar({
       style={{
         width: SIDEBAR_WIDTH,
         flexShrink: 0,
-        minHeight: "100vh",
         background: colors.deepGreen,
         color: colors.cream,
         display: "flex",
@@ -81,32 +75,6 @@ export function Sidebar({
         fontFamily: fontSans,
       }}
     >
-      <div style={{ padding: "0 20px 20px", fontFamily: fontSerif, fontWeight: 700, fontSize: "20px" }}>
-        FinComp
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          padding: "12px 20px",
-          borderTop: `1px solid ${colors.midGreen}`,
-          borderBottom: `1px solid ${colors.midGreen}`,
-          marginBottom: "12px",
-        }}
-      >
-        <Avatar initial={me?.name ? me.name.trim()[0] : undefined} />
-        <div style={{ overflow: "hidden" }}>
-          <div style={{ fontSize: "14px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {me?.name ?? "…"}
-          </div>
-          <div style={{ fontSize: "12px", color: colors.sageGreen, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {mine?.household.name ?? "…"}
-          </div>
-        </div>
-      </div>
-
       <div style={{ overflowY: "auto", flex: 1 }}>
         {GROUPS.map((group, i) => (
           <SidebarGroup

@@ -46,6 +46,65 @@ const EARNINGS_EVIDENCE_RANK: Record<string, number> = {
 };
 
 // =====================================================================
+// Free-text intent extraction — lets a household just describe what
+// they're looking for in their own words instead of filling in every
+// structured field by hand. EXTRACTION ONLY, same boundary as Document
+// Intelligence / Government Economic Intelligence's livelihood
+// profiles: pulls out what the text actually says, never invents a
+// number or guesses a plausible-sounding default. The frontend only
+// ever uses an extracted value to fill in a field the household left
+// blank — it never overwrites something they already typed themselves.
+// =====================================================================
+
+// Signed-in gate only — this doesn't read or write any household data
+// (pure text-in/JSON-out), but still shouldn't be callable by a signed
+// -out client. Actions can't call requireMembership directly (no
+// ctx.db), so this mutation does the check instead — same pattern as
+// every other service's "ensureAccess"-style gate.
+export const ensureIntentExtractionAccess = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await requireMembership(ctx);
+    return null;
+  },
+});
+
+export const extractJobIntent = action({
+  args: { freeText: v.string() },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<unknown> => {
+    await ctx.runMutation(api.sideIncome.ensureIntentExtractionAccess, {});
+    const system = `You extract structured fields from a household member's free-text description of what part-time/side-income work they're looking for. This is EXTRACTION ONLY — pull out what the text actually says, never infer or invent a fact the text doesn't support. Return ONLY JSON: { "typeOfWork": string | null, "hoursPerWeek": number | null, "availabilityWindow": string | null, "targetAmountMinorUnits": number | null, "workLocationPreference": "online" | "offline" | "either" | null, "location": string | null }. "typeOfWork" is a short label (e.g. "Online tutoring", "Freelance writing"). "hoursPerWeek" is a plausible weekly-hours NUMBER only if one is actually stated or a clear range/day-count is given — never invent one from vague phrasing. "availabilityWindow" is one of "Weekday evenings", "Weekday mornings", "Weekends", "Flexible / anytime" only if genuinely implied, else null. "targetAmountMinorUnits" is a monthly rupee figure (whole rupees, not paise) ONLY if the text states one. "workLocationPreference" is "online" if they want remote-only, "offline" if they explicitly want local/in-person only, "either" if they say they're open to both, else null. "location" is a city/area name ONLY if actually named. Use null for anything the text genuinely doesn't say.`;
+    const parsed = await chatJson(system, JSON.stringify({ freeText: args.freeText }));
+    return {
+      typeOfWork: typeof parsed.typeOfWork === "string" && parsed.typeOfWork.trim() ? parsed.typeOfWork.trim() : null,
+      hoursPerWeek: typeof parsed.hoursPerWeek === "number" ? Math.round(parsed.hoursPerWeek) : null,
+      availabilityWindow: typeof parsed.availabilityWindow === "string" && parsed.availabilityWindow.trim() ? parsed.availabilityWindow.trim() : null,
+      targetAmountMinorUnits: typeof parsed.targetAmountMinorUnits === "number" ? Math.round(parsed.targetAmountMinorUnits) : null,
+      workLocationPreference: parsed.workLocationPreference === "online" || parsed.workLocationPreference === "offline" || parsed.workLocationPreference === "either" ? parsed.workLocationPreference : null,
+      location: typeof parsed.location === "string" && parsed.location.trim() ? parsed.location.trim() : null,
+    };
+  },
+});
+
+export const extractBusinessIntent = action({
+  args: { freeText: v.string() },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<unknown> => {
+    await ctx.runMutation(api.sideIncome.ensureIntentExtractionAccess, {});
+    const system = `You extract structured fields from a household's free-text description of a small business idea they're considering. This is EXTRACTION ONLY — pull out what the text actually says, never infer or invent a fact the text doesn't support. Return ONLY JSON: { "ideaDescription": string | null, "startupCapitalMinorUnits": number | null, "effortHoursPerWeek": number | null, "rampUpMonths": number | null }. "ideaDescription" is a short, clean restatement of the idea (e.g. "home-based tiffin service") — grounded only in what's actually described. The other three are whole-number figures ONLY if the text actually states or clearly implies one — never invent a plausible-sounding default. Use null for anything the text genuinely doesn't say.`;
+    const parsed = await chatJson(system, JSON.stringify({ freeText: args.freeText }));
+    return {
+      ideaDescription: typeof parsed.ideaDescription === "string" && parsed.ideaDescription.trim() ? parsed.ideaDescription.trim() : null,
+      startupCapitalMinorUnits: typeof parsed.startupCapitalMinorUnits === "number" ? Math.round(parsed.startupCapitalMinorUnits) : null,
+      effortHoursPerWeek: typeof parsed.effortHoursPerWeek === "number" ? Math.round(parsed.effortHoursPerWeek) : null,
+      rampUpMonths: typeof parsed.rampUpMonths === "number" ? Math.round(parsed.rampUpMonths) : null,
+    };
+  },
+});
+
+// =====================================================================
 // Entries — CRUD with kind-specific validation at the mutation level,
 // not just schema optionality.
 // =====================================================================
@@ -64,6 +123,8 @@ export const createSideIncomeEntry = mutation({
     rateMinorUnitsPerHour: v.optional(v.number()),
     targetAmountMinorUnits: v.optional(v.number()),
     calcMode: v.optional(v.union(v.literal("timeFirst"), v.literal("incomeFirst"))),
+    workLocationPreference: v.optional(v.union(v.literal("online"), v.literal("offline"), v.literal("either"))),
+    location: v.optional(v.string()),
     // business fields
     ideaDescription: v.optional(v.string()),
     startupCapitalMinorUnits: v.optional(v.number()),
@@ -94,6 +155,8 @@ export const createSideIncomeEntry = mutation({
       rateMinorUnitsPerHour: args.rateMinorUnitsPerHour,
       targetAmountMinorUnits: args.targetAmountMinorUnits,
       calcMode: args.calcMode,
+      workLocationPreference: args.workLocationPreference,
+      location: args.location,
       ideaDescription: args.ideaDescription,
       startupCapitalMinorUnits: args.startupCapitalMinorUnits,
       effortHoursPerWeek: args.effortHoursPerWeek,
@@ -107,7 +170,7 @@ export const createSideIncomeEntry = mutation({
 // Rejects a business-only field on a job entry or vice versa — cross
 // -kind pollution is blocked here, not just left to optionality.
 function assertNoCrossKindFields(kind: "job" | "business", args: Record<string, unknown>): void {
-  const jobOnly = ["typeOfWork", "hoursPerWeek", "availabilityWindow", "rateKnown", "rateMinorUnitsPerHour", "targetAmountMinorUnits", "calcMode"];
+  const jobOnly = ["typeOfWork", "hoursPerWeek", "availabilityWindow", "rateKnown", "rateMinorUnitsPerHour", "targetAmountMinorUnits", "calcMode", "workLocationPreference", "location"];
   const businessOnly = ["ideaDescription", "startupCapitalMinorUnits", "effortHoursPerWeek", "rampUpMonths"];
   const forbidden = kind === "job" ? businessOnly : jobOnly;
   for (const key of forbidden) {
@@ -136,6 +199,8 @@ export const updateSideIncomeEntry = mutation({
     rateMinorUnitsPerHour: v.optional(v.number()),
     targetAmountMinorUnits: v.optional(v.number()),
     calcMode: v.optional(v.union(v.literal("timeFirst"), v.literal("incomeFirst"))),
+    workLocationPreference: v.optional(v.union(v.literal("online"), v.literal("offline"), v.literal("either"))),
+    location: v.optional(v.string()),
     ideaDescription: v.optional(v.string()),
     startupCapitalMinorUnits: v.optional(v.number()),
     effortHoursPerWeek: v.optional(v.number()),
@@ -285,7 +350,15 @@ export const estimateJobIncomeRange = action({
     const entry = (await ctx.runQuery(internal.sideIncome.requireOwnedEntryInternal, { entryId: args.entryId })) as Record<string, unknown> | null;
     if (entry === null) throw new ConvexError("Side-income entry not found.");
     assertJobEntryReady(entry);
-    const queryText = `typical hourly or monthly pay range for ${entry.typeOfWork ?? "part-time online or local"} work in India ${new Date().getFullYear()}`;
+    // Location scoping — never guessed. A household open to offline/local
+    // work gets a genuinely location-scoped search (when they've given a
+    // location); "online" stays India-wide since location is irrelevant
+    // for remote work; "offline"/"either" with no location given is
+    // honestly left India-wide rather than inventing a city.
+    const locationPref = entry.workLocationPreference as "online" | "offline" | "either" | undefined;
+    const location = typeof entry.location === "string" ? entry.location.trim() : "";
+    const locationScope = locationPref !== "online" && location !== "" ? location : "India";
+    const queryText = `typical hourly or monthly pay range for ${entry.typeOfWork ?? "part-time online or local"} work in ${locationScope} ${new Date().getFullYear()}`;
     let searchSummary = "";
     let sourceSnapshotId: Id<"sourceSnapshots"> | null = null;
     try {
@@ -308,8 +381,16 @@ export const estimateJobIncomeRange = action({
         reason: `The search couldn't be completed (${err instanceof Error ? err.message : String(err)}) — no rough estimate can be generated right now.`,
       };
     }
-    const system = `You read real web search snippets about pay for part-time/side work and propose 2-3 DISTINCT, realistic opportunities for someone with ${entry.hoursPerWeek} hours/week available${entry.typeOfWork ? ` interested in "${entry.typeOfWork}"` : " who hasn't named a specific kind of work"}. Return ONLY JSON: { "opportunities": [ { "title": string, "mode": "online" | "offline", "estimateLowMinorUnits": number, "estimateHighMinorUnits": number, "reasoning": string } ], "note": string }. Every opportunity's title, mode, and rupee range must be grounded in what the snippets actually say — never invent a category or figure the snippets don't support. Both estimate numbers are whole rupees, monthly, for the stated hours/week. "reasoning" is a one-sentence "why this fits" grounded in the snippets. If the snippets don't support any real opportunity, return an empty "opportunities" array and explain why in "note" rather than guessing.`;
-    const parsed = await chatJson(system, JSON.stringify({ typeOfWork: entry.typeOfWork, hoursPerWeek: entry.hoursPerWeek, searchSnippets: searchSummary }));
+    const locationInstruction =
+      locationPref === "online"
+        ? "The household wants ONLINE/remote work only — every opportunity's \"mode\" must be \"online\"."
+        : locationPref === "offline"
+          ? `The household wants OFFLINE/local work only${location ? ` in ${location}` : ""} — every opportunity's "mode" must be "offline", grounded in what the snippets actually say is available there.`
+          : locationPref === "either" && location
+            ? `The household is open to either online or local work${location ? ` (local means ${location})` : ""} — set each opportunity's "mode" to whichever the snippets actually support.`
+            : "The household hasn't stated an online/offline preference — set each opportunity's \"mode\" to whichever the snippets actually support.";
+    const system = `You read real web search snippets about pay for part-time/side work and propose 2-3 DISTINCT, realistic opportunities for someone with ${entry.hoursPerWeek} hours/week available${entry.typeOfWork ? ` interested in "${entry.typeOfWork}"` : " who hasn't named a specific kind of work"}. ${locationInstruction} Return ONLY JSON: { "opportunities": [ { "title": string, "mode": "online" | "offline", "estimateLowMinorUnits": number, "estimateHighMinorUnits": number, "reasoning": string } ], "note": string }. Every opportunity's title, mode, and rupee range must be grounded in what the snippets actually say — never invent a category, location, or figure the snippets don't support. Both estimate numbers are whole rupees, monthly, for the stated hours/week. "reasoning" is a one-sentence "why this fits" grounded in the snippets. If the snippets don't support any real opportunity matching the stated preference, return an empty "opportunities" array and explain why in "note" rather than guessing.`;
+    const parsed = await chatJson(system, JSON.stringify({ typeOfWork: entry.typeOfWork, hoursPerWeek: entry.hoursPerWeek, workLocationPreference: locationPref ?? null, location: location || null, searchSnippets: searchSummary }));
     const rawOpportunities = Array.isArray(parsed.opportunities) ? parsed.opportunities : [];
     const candidates = rawOpportunities
       .filter((o): o is Record<string, unknown> => typeof o === "object" && o !== null)
@@ -713,7 +794,13 @@ export const generateDeepDive = action({
       }
       if (opp?.title) subject = opp.title.replace(/\s*—\s*rough estimate\s*$/i, "");
     }
-    const queryText = `${subject} — ${TOPIC_QUERY_HINT[args.topic as JobTopic | BusinessTopic]} India`;
+    // Same location-scoping discipline as estimateJobIncomeRange — only
+    // narrows the search when the household actually gave a location and
+    // isn't online-only; never guessed.
+    const deepDiveLocationPref = entry.kind === "job" ? (entry.workLocationPreference as "online" | "offline" | "either" | undefined) : undefined;
+    const deepDiveLocation = entry.kind === "job" && typeof entry.location === "string" ? entry.location.trim() : "";
+    const deepDiveLocationScope = deepDiveLocationPref !== "online" && deepDiveLocation !== "" ? deepDiveLocation : "India";
+    const queryText = `${subject} — ${TOPIC_QUERY_HINT[args.topic as JobTopic | BusinessTopic]} ${deepDiveLocationScope}`;
     let searchSummary = "";
     let sourceSnapshotId: Id<"sourceSnapshots"> | null = null;
     try {
@@ -912,37 +999,10 @@ export const listSchemeChecks = query({
   },
 });
 
-// =====================================================================
-// Human consult — interest only, never "booking". No scheduling states.
-// =====================================================================
-
-export const requestHumanConsult = mutation({
-  args: { entryId: v.id("sideIncomeEntries"), topic: v.string() },
-  returns: v.id("humanConsultRequests"),
-  handler: async (ctx, args) => {
-    const membership = await requireMembership(ctx);
-    const entry = await ctx.db.get("sideIncomeEntries", args.entryId);
-    if (entry === null || entry.householdId !== membership.householdId) {
-      throw new ConvexError("Side-income entry not found.");
-    }
-    return await ctx.db.insert("humanConsultRequests", {
-      householdId: membership.householdId,
-      sideIncomeEntryId: args.entryId,
-      topic: args.topic,
-      status: "interest_logged",
-      requestedAt: Date.now(),
-    });
-  },
-});
-
-export const listHumanConsultRequests = query({
-  args: {},
-  returns: v.array(v.any()),
-  handler: async (ctx) => {
-    const membership = await requireMembership(ctx);
-    return await ctx.db.query("humanConsultRequests").withIndex("by_household", (q) => q.eq("householdId", membership.householdId)).collect();
-  },
-});
+// Human consult ("Want a real person's opinion?") now lives in
+// convex/humanConsult.ts as a generic mutation shared across every
+// service — see that file. Side-Income calls it with
+// sourceService: "sideIncome", sourceEntityId: <the entry id>.
 
 // =====================================================================
 // Graduation — into a real Financial Foundation incomeSources row.

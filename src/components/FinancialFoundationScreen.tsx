@@ -14,17 +14,23 @@ export function FinancialFoundationScreen() {
   const expenses = useQuery(api.expenses.listExpenses);
   const obligations = useQuery(api.obligations.listObligations);
   const assets = useQuery(api.assets.listAssets);
+  const insurancePolicies = useQuery(api.insurance.listInsurancePolicies);
   const [revealed, setRevealed] = useState(false);
 
   const stillLoading =
     incomeSources === undefined ||
     expenses === undefined ||
     obligations === undefined ||
-    assets === undefined;
+    assets === undefined ||
+    insurancePolicies === undefined;
 
   const hasAnyData =
     !stillLoading &&
-    (incomeSources.length > 0 || expenses.length > 0 || obligations.length > 0 || assets.length > 0);
+    (incomeSources.length > 0 ||
+      expenses.length > 0 ||
+      obligations.length > 0 ||
+      assets.length > 0 ||
+      insurancePolicies.length > 0);
 
   return (
     <main style={{ flex: 1, padding: "40px 48px", fontFamily: fontSans, color: colors.ink }}>
@@ -50,6 +56,7 @@ export function FinancialFoundationScreen() {
             <ExpenseSection expenses={expenses ?? []} />
             <ObligationSection obligations={obligations ?? []} />
             <AssetSection assets={assets ?? []} />
+            <InsuranceSection insurancePolicies={insurancePolicies ?? []} />
           </div>
         )}
       </div>
@@ -158,7 +165,7 @@ function EntryRow({ label, detail }: { label: string; detail: string }) {
 // (extractedFacts.claimedValue is v.any() at the schema level, since a
 // candidate value's shape is deliberately not schema-enforced).
 type ClaimedValue = {
-  category: "incomeSources" | "expenses" | "obligations" | "assets";
+  category: "incomeSources" | "expenses" | "obligations" | "assets" | "insurancePolicies";
   label: string;
   amountMinorUnits: number;
   secondaryAmountMinorUnits: number | null;
@@ -308,6 +315,40 @@ const ghostButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const dangerButtonStyle: React.CSSProperties = {
+  ...ghostButtonStyle,
+  color: "#a13d3d",
+  borderColor: "#a13d3d",
+};
+
+// Two-click confirm (no modal) — a first click swaps the label to
+// "Really delete?" and only a second click within a few seconds
+// actually calls `onDelete`, so a stray click can't silently remove a
+// real financial entry. Used by every Financial Foundation row.
+function DeleteButton({ onDelete }: { onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+  return (
+    <button
+      style={dangerButtonStyle}
+      onClick={() => {
+        if (confirming) {
+          onDelete();
+          setConfirming(false);
+        } else {
+          setConfirming(true);
+        }
+      }}
+    >
+      {confirming ? "Really delete?" : "Delete"}
+    </button>
+  );
+}
+
 function IncomeSection({
   incomeSources,
 }: {
@@ -364,13 +405,11 @@ function IncomeSection({
     }).then((newId) => confirmFact({ factId: fact._id, targetEntityId: newId }));
   };
 
-  const cadenceLabel = { monthly: "mo", weekly: "wk", annual: "yr", irregular: "irregular" };
-
   return (
     <Card>
       <SectionHeading>Income sources</SectionHeading>
       {incomeSources.map((i) => (
-        <EntryRow key={i._id} label={i.label} detail={`₹${i.amountMinorUnits.toLocaleString("en-IN")} / ${cadenceLabel[i.cadence]} · ${i.reliability === "dependable" ? "Dependable" : "Uncertain"}`} />
+        <IncomeSourceRow key={i._id} incomeSource={i} />
       ))}
       {pending?.map((fact) => (
         <PendingFactCard key={fact._id} fact={fact} onEdit={() => startEdit(fact)} onConfirm={() => confirmDirectly(fact)} />
@@ -392,6 +431,69 @@ function IncomeSection({
       </form>
       <UploadLink label="Upload a payslip or bank statement instead" sectionHint="incomeSources" />
     </Card>
+  );
+}
+
+const CADENCE_LABEL = { monthly: "mo", weekly: "wk", annual: "yr", irregular: "irregular" } as const;
+
+// Same edit/delete pattern as InsurancePolicyRow further down — an
+// inline form toggled by "Edit", saved via the real update mutation,
+// never a direct DB edit.
+function IncomeSourceRow({ incomeSource }: { incomeSource: Doc<"incomeSources"> }) {
+  const update = useMutation(api.incomeSources.updateIncomeSource);
+  const remove = useMutation(api.incomeSources.deleteIncomeSource);
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(incomeSource.label);
+  const [amount, setAmount] = useState(String(incomeSource.amountMinorUnits));
+  const [cadence, setCadence] = useState(incomeSource.cadence);
+  const [dependable, setDependable] = useState(incomeSource.reliability === "dependable");
+  const [error, setError] = useState<string | null>(null);
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    void update({
+      incomeSourceId: incomeSource._id,
+      label,
+      amountMinorUnits: Number(amount),
+      currency: incomeSource.currency,
+      cadence,
+      reliability: dependable ? "dependable" : "uncertain",
+    })
+      .then(() => setEditing(false))
+      .catch((err: Error) => setError(err.message));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <EntryRow label={incomeSource.label} detail={`₹${incomeSource.amountMinorUnits.toLocaleString("en-IN")} / ${CADENCE_LABEL[incomeSource.cadence]} · ${incomeSource.reliability === "dependable" ? "Dependable" : "Uncertain"}`} />
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close" : "Edit"}
+          </button>
+          <DeleteButton onDelete={() => void remove({ incomeSourceId: incomeSource._id })} />
+        </div>
+      </div>
+      {editing && (
+        <form style={formRowStyle} onSubmit={save}>
+          <input style={formInputStyle} placeholder="Label" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <input style={formInputStyle} placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <select style={formInputStyle} value={cadence} onChange={(e) => setCadence(e.target.value as typeof cadence)}>
+            <option value="monthly">Monthly</option>
+            <option value="weekly">Weekly</option>
+            <option value="annual">Annual</option>
+            <option value="irregular">Irregular</option>
+          </select>
+          <label style={{ fontSize: "13px", color: colors.inkSoft, display: "flex", alignItems: "center", gap: "4px" }}>
+            <input type="checkbox" checked={dependable} onChange={(e) => setDependable(e.target.checked)} />
+            Dependable
+          </label>
+          <button style={addButtonStyle} type="submit">Save</button>
+          {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -449,13 +551,11 @@ function ExpenseSection({
     }).then((newId) => confirmFact({ factId: fact._id, targetEntityId: newId }));
   };
 
-  const recurrenceLabel = { monthly: "mo", weekly: "wk", annual: "yr", oneOff: "one-off" };
-
   return (
     <Card>
       <SectionHeading>Expenses</SectionHeading>
       {expenses.map((e) => (
-        <EntryRow key={e._id} label={e.label} detail={`₹${e.amountMinorUnits.toLocaleString("en-IN")} / ${recurrenceLabel[e.recurrence]} · ${e.classification === "essential" ? "Essential" : "Flexible"}`} />
+        <ExpenseRow key={e._id} expense={e} />
       ))}
       {pending?.map((fact) => (
         <PendingFactCard key={fact._id} fact={fact} onEdit={() => startEdit(fact)} onConfirm={() => confirmDirectly(fact)} />
@@ -477,6 +577,66 @@ function ExpenseSection({
       </form>
       <UploadLink label="Upload a photo or PDF instead" sectionHint="expenses" />
     </Card>
+  );
+}
+
+const RECURRENCE_LABEL = { monthly: "mo", weekly: "wk", annual: "yr", oneOff: "one-off" } as const;
+
+function ExpenseRow({ expense }: { expense: Doc<"expenses"> }) {
+  const update = useMutation(api.expenses.updateExpense);
+  const remove = useMutation(api.expenses.deleteExpense);
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(expense.label);
+  const [amount, setAmount] = useState(String(expense.amountMinorUnits));
+  const [recurrence, setRecurrence] = useState(expense.recurrence);
+  const [essential, setEssential] = useState(expense.classification === "essential");
+  const [error, setError] = useState<string | null>(null);
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    void update({
+      expenseId: expense._id,
+      label,
+      amountMinorUnits: Number(amount),
+      currency: expense.currency,
+      classification: essential ? "essential" : "flexible",
+      recurrence,
+    })
+      .then(() => setEditing(false))
+      .catch((err: Error) => setError(err.message));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <EntryRow label={expense.label} detail={`₹${expense.amountMinorUnits.toLocaleString("en-IN")} / ${RECURRENCE_LABEL[expense.recurrence]} · ${expense.classification === "essential" ? "Essential" : "Flexible"}`} />
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close" : "Edit"}
+          </button>
+          <DeleteButton onDelete={() => void remove({ expenseId: expense._id })} />
+        </div>
+      </div>
+      {editing && (
+        <form style={formRowStyle} onSubmit={save}>
+          <input style={formInputStyle} placeholder="Label" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <input style={formInputStyle} placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <select style={formInputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value as typeof recurrence)}>
+            <option value="monthly">Monthly</option>
+            <option value="weekly">Weekly</option>
+            <option value="annual">Annual</option>
+            <option value="oneOff">One-off</option>
+          </select>
+          <label style={{ fontSize: "13px", color: colors.inkSoft, display: "flex", alignItems: "center", gap: "4px" }}>
+            <input type="checkbox" checked={essential} onChange={(e) => setEssential(e.target.checked)} />
+            Essential
+          </label>
+          <button style={addButtonStyle} type="submit">Save</button>
+          {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -537,19 +697,66 @@ function ObligationSection({
     <Card>
       <SectionHeading>Obligations (loans/EMIs)</SectionHeading>
       {obligations.map((o) => (
-        <EntryRow key={o._id} label={o.label} detail={`Balance ₹${o.balanceMinorUnits.toLocaleString("en-IN")} · EMI ₹${o.emiMinorUnits.toLocaleString("en-IN")}`} />
+        <ObligationRow key={o._id} obligation={o} />
       ))}
       {pending?.map((fact) => (
         <PendingFactCard key={fact._id} fact={fact} onEdit={() => startEdit(fact)} onConfirm={() => confirmDirectly(fact)} />
       ))}
       <form style={formRowStyle} onSubmit={submit}>
         <input style={formInputStyle} placeholder="Label — e.g. Home loan" value={label} onChange={(e) => setLabel(e.target.value)} />
-        <input style={formInputStyle} placeholder="Outstanding balance" value={balance} onChange={(e) => setBalance(e.target.value)} />
-        <input style={formInputStyle} placeholder="EMI" value={emi} onChange={(e) => setEmi(e.target.value)} />
+        <input style={formInputStyle} placeholder="Total amount still owed" value={balance} onChange={(e) => setBalance(e.target.value)} />
+        <input style={formInputStyle} placeholder="What you pay monthly" value={emi} onChange={(e) => setEmi(e.target.value)} />
         <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
       </form>
       <UploadLink label="Upload a photo or PDF instead" sectionHint="obligations" />
     </Card>
+  );
+}
+
+function ObligationRow({ obligation }: { obligation: Doc<"obligations"> }) {
+  const update = useMutation(api.obligations.updateObligation);
+  const remove = useMutation(api.obligations.deleteObligation);
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(obligation.label);
+  const [balance, setBalance] = useState(String(obligation.balanceMinorUnits));
+  const [emi, setEmi] = useState(String(obligation.emiMinorUnits));
+  const [error, setError] = useState<string | null>(null);
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    void update({
+      obligationId: obligation._id,
+      label,
+      balanceMinorUnits: Number(balance),
+      emiMinorUnits: Number(emi),
+      currency: obligation.currency,
+    })
+      .then(() => setEditing(false))
+      .catch((err: Error) => setError(err.message));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <EntryRow label={obligation.label} detail={`₹${obligation.balanceMinorUnits.toLocaleString("en-IN")} owed · ₹${obligation.emiMinorUnits.toLocaleString("en-IN")}/mo paid`} />
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close" : "Edit"}
+          </button>
+          <DeleteButton onDelete={() => void remove({ obligationId: obligation._id })} />
+        </div>
+      </div>
+      {editing && (
+        <form style={formRowStyle} onSubmit={save}>
+          <input style={formInputStyle} placeholder="Label" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <input style={formInputStyle} placeholder="Total amount still owed" value={balance} onChange={(e) => setBalance(e.target.value)} />
+          <input style={formInputStyle} placeholder="What you pay monthly" value={emi} onChange={(e) => setEmi(e.target.value)} />
+          <button style={addButtonStyle} type="submit">Save</button>
+          {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -606,13 +813,11 @@ function AssetSection({
     }).then((newId) => confirmFact({ factId: fact._id, targetEntityId: newId }));
   };
 
-  const liquidityLabel = { liquid: "Liquid", semiLiquid: "Semi-liquid", illiquid: "Illiquid" };
-
   return (
     <Card>
       <SectionHeading>Assets / savings</SectionHeading>
       {assets.map((a) => (
-        <EntryRow key={a._id} label={a.label} detail={`₹${a.valueMinorUnits.toLocaleString("en-IN")} · ${liquidityLabel[a.liquidity]}`} />
+        <AssetRow key={a._id} asset={a} />
       ))}
       {pending?.map((fact) => (
         <PendingFactCard key={fact._id} fact={fact} onEdit={() => startEdit(fact)} onConfirm={() => confirmDirectly(fact)} />
@@ -628,5 +833,229 @@ function AssetSection({
         <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
       </form>
     </Card>
+  );
+}
+
+const LIQUIDITY_LABEL = { liquid: "Liquid", semiLiquid: "Semi-liquid", illiquid: "Illiquid" } as const;
+
+function AssetRow({ asset }: { asset: Doc<"assets"> }) {
+  const update = useMutation(api.assets.updateAsset);
+  const remove = useMutation(api.assets.deleteAsset);
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(asset.label);
+  const [value, setValue] = useState(String(asset.valueMinorUnits));
+  const [liquidity, setLiquidity] = useState(asset.liquidity);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    void update({
+      assetId: asset._id,
+      label,
+      valueMinorUnits: Number(value),
+      currency: asset.currency,
+      liquidity,
+    })
+      .then(() => setEditing(false))
+      .catch((err: Error) => setError(err.message));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <EntryRow label={asset.label} detail={`₹${asset.valueMinorUnits.toLocaleString("en-IN")} · ${LIQUIDITY_LABEL[asset.liquidity]}`} />
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close" : "Edit"}
+          </button>
+          <DeleteButton onDelete={() => void remove({ assetId: asset._id })} />
+        </div>
+      </div>
+      {editing && (
+        <form style={formRowStyle} onSubmit={save}>
+          <input style={formInputStyle} placeholder="Label" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <input style={formInputStyle} placeholder="Value" value={value} onChange={(e) => setValue(e.target.value)} />
+          <select style={formInputStyle} value={liquidity} onChange={(e) => setLiquidity(e.target.value as typeof liquidity)}>
+            <option value="liquid">Liquid</option>
+            <option value="semiLiquid">Semi-liquid</option>
+            <option value="illiquid">Illiquid</option>
+          </select>
+          <button style={addButtonStyle} type="submit">Save</button>
+          {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
+        </form>
+      )}
+    </div>
+  );
+}
+
+function InsuranceSection({
+  insurancePolicies,
+}: {
+  insurancePolicies: Doc<"insurancePolicies">[];
+}) {
+  const pending = useQuery(api.extractedFacts.listPendingByCategory, { category: "insurancePolicies" });
+  const addInsurancePolicy = useMutation(api.insurance.addInsurancePolicy);
+  const confirmFact = useMutation(api.extractedFacts.confirmExtractedFact);
+  const [type, setType] = useState<"life" | "health" | "motor" | "property" | "personalAccident" | "other">("life");
+  const [coverageAmount, setCoverageAmount] = useState("");
+  const [premium, setPremium] = useState("");
+  const [premiumFrequency, setPremiumFrequency] = useState<"monthly" | "annual">("annual");
+  const [insurerName, setInsurerName] = useState("");
+  const [policyNumber, setPolicyNumber] = useState("");
+  const [editingFactId, setEditingFactId] = useState<Id<"extractedFacts"> | null>(null);
+
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void addInsurancePolicy({
+      type,
+      coverageAmountMinorUnits: Number(coverageAmount),
+      premiumMinorUnits: Number(premium),
+      premiumFrequency,
+      currency: "INR",
+      insurerName: insurerName.trim() || undefined,
+      policyNumber: policyNumber.trim() || undefined,
+    }).then(async (newId) => {
+      if (editingFactId) {
+        await confirmFact({ factId: editingFactId, targetEntityId: newId });
+        setEditingFactId(null);
+      }
+      setType("life");
+      setCoverageAmount("");
+      setPremium("");
+      setPremiumFrequency("annual");
+      setInsurerName("");
+      setPolicyNumber("");
+    });
+  };
+
+  const startEdit = (fact: PendingFact) => {
+    const claimed = fact.claimedValue as ClaimedValue;
+    setType("other");
+    setCoverageAmount(String(claimed.amountMinorUnits));
+    setPremium(String(claimed.secondaryAmountMinorUnits ?? claimed.amountMinorUnits));
+    setPremiumFrequency("annual");
+    setInsurerName(claimed.label);
+    setPolicyNumber("");
+    setEditingFactId(fact._id);
+  };
+
+  const confirmDirectly = (fact: PendingFact) => {
+    const claimed = fact.claimedValue as ClaimedValue;
+    void addInsurancePolicy({
+      type: "other",
+      coverageAmountMinorUnits: claimed.amountMinorUnits,
+      premiumMinorUnits: claimed.secondaryAmountMinorUnits ?? claimed.amountMinorUnits,
+      premiumFrequency: "annual",
+      currency: "INR",
+      insurerName: claimed.label,
+    }).then((newId) => confirmFact({ factId: fact._id, targetEntityId: newId }));
+  };
+
+  return (
+    <Card>
+      <SectionHeading>Insurance policies</SectionHeading>
+      {insurancePolicies.map((p) => (
+        <InsurancePolicyRow key={p._id} policy={p} />
+      ))}
+      {pending?.map((fact) => (
+        <PendingFactCard key={fact._id} fact={fact} onEdit={() => startEdit(fact)} onConfirm={() => confirmDirectly(fact)} />
+      ))}
+      <form style={formRowStyle} onSubmit={submit}>
+        <select style={formInputStyle} value={type} onChange={(e) => setType(e.target.value as typeof type)}>
+          <option value="life">Life</option>
+          <option value="health">Health</option>
+          <option value="motor">Motor</option>
+          <option value="property">Property</option>
+          <option value="personalAccident">Personal accident</option>
+          <option value="other">Other</option>
+        </select>
+        <input style={formInputStyle} placeholder="Coverage amount" value={coverageAmount} onChange={(e) => setCoverageAmount(e.target.value)} />
+        <input style={formInputStyle} placeholder="Premium" value={premium} onChange={(e) => setPremium(e.target.value)} />
+        <select style={formInputStyle} value={premiumFrequency} onChange={(e) => setPremiumFrequency(e.target.value as typeof premiumFrequency)}>
+          <option value="monthly">Monthly</option>
+          <option value="annual">Annual</option>
+        </select>
+        <input style={formInputStyle} placeholder="Insurer (optional)" value={insurerName} onChange={(e) => setInsurerName(e.target.value)} />
+        <input style={formInputStyle} placeholder="Policy number (optional)" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} />
+        <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
+      </form>
+      <UploadLink label="Upload a policy document or renewal notice instead" sectionHint="insurancePolicies" />
+    </Card>
+  );
+}
+
+const INSURANCE_TYPE_LABEL = { life: "Life", health: "Health", motor: "Motor", property: "Property", personalAccident: "Personal accident", other: "Other" } as const;
+const PREMIUM_FREQUENCY_LABEL = { monthly: "mo", annual: "yr" } as const;
+
+// Lets a user correct an already-confirmed policy's fields (e.g. a type
+// that was defaulted to "other" during a one-click "Confirm" from an
+// extracted fact — see confirmDirectly above) via the real update
+// mutation, never a direct DB edit.
+function InsurancePolicyRow({ policy }: { policy: Doc<"insurancePolicies"> }) {
+  const update = useMutation(api.insurance.updateInsurancePolicy);
+  const remove = useMutation(api.insurance.deleteInsurancePolicy);
+  const [editing, setEditing] = useState(false);
+  const [type, setType] = useState(policy.type);
+  const [coverageAmount, setCoverageAmount] = useState(String(policy.coverageAmountMinorUnits));
+  const [premium, setPremium] = useState(String(policy.premiumMinorUnits));
+  const [premiumFrequency, setPremiumFrequency] = useState(policy.premiumFrequency);
+  const [insurerName, setInsurerName] = useState(policy.insurerName ?? "");
+  const [policyNumber, setPolicyNumber] = useState(policy.policyNumber ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    void update({
+      policyId: policy._id,
+      type,
+      coverageAmountMinorUnits: Number(coverageAmount),
+      premiumMinorUnits: Number(premium),
+      premiumFrequency,
+      insurerName: insurerName.trim() || undefined,
+      policyNumber: policyNumber.trim() || undefined,
+    })
+      .then(() => setEditing(false))
+      .catch((err: Error) => setError(err.message));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <EntryRow
+          label={`${INSURANCE_TYPE_LABEL[policy.type]}${policy.insurerName ? ` — ${policy.insurerName}` : ""}`}
+          detail={`₹${policy.coverageAmountMinorUnits.toLocaleString("en-IN")} cover · ₹${policy.premiumMinorUnits.toLocaleString("en-IN")}/${PREMIUM_FREQUENCY_LABEL[policy.premiumFrequency]} premium`}
+        />
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close" : "Edit"}
+          </button>
+          <DeleteButton onDelete={() => void remove({ policyId: policy._id })} />
+        </div>
+      </div>
+      {editing && (
+        <form style={formRowStyle} onSubmit={save}>
+          <select style={formInputStyle} value={type} onChange={(e) => setType(e.target.value as typeof type)}>
+            <option value="life">Life</option>
+            <option value="health">Health</option>
+            <option value="motor">Motor</option>
+            <option value="property">Property</option>
+            <option value="personalAccident">Personal accident</option>
+            <option value="other">Other</option>
+          </select>
+          <input style={formInputStyle} placeholder="Coverage amount" value={coverageAmount} onChange={(e) => setCoverageAmount(e.target.value)} />
+          <input style={formInputStyle} placeholder="Premium" value={premium} onChange={(e) => setPremium(e.target.value)} />
+          <select style={formInputStyle} value={premiumFrequency} onChange={(e) => setPremiumFrequency(e.target.value as typeof premiumFrequency)}>
+            <option value="monthly">Monthly</option>
+            <option value="annual">Annual</option>
+          </select>
+          <input style={formInputStyle} placeholder="Insurer (optional)" value={insurerName} onChange={(e) => setInsurerName(e.target.value)} />
+          <input style={formInputStyle} placeholder="Policy number (optional)" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} />
+          <button style={addButtonStyle} type="submit">Save</button>
+          {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
+        </form>
+      )}
+    </div>
   );
 }

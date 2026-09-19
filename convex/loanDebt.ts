@@ -179,6 +179,9 @@ export const updateLoanDetails = mutation({
     feesMinorUnits: v.optional(v.number()),
     prepaymentTerms: v.optional(v.string()),
     nextResetDate: v.optional(v.number()),
+    // Insurance & Risk Planning prep — purely informational, never read
+    // by computeEmiMinor/amortize or any affordability/prepayment result.
+    bundledInsuranceCoverageMinorUnits: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -198,6 +201,8 @@ export const updateLoanDetails = mutation({
       assertIntegerAtLeast(args.minimumPaymentMinorUnits, 0, "minimumPaymentMinorUnits");
     if (args.feesMinorUnits !== undefined)
       assertIntegerAtLeast(args.feesMinorUnits, 0, "feesMinorUnits");
+    if (args.bundledInsuranceCoverageMinorUnits !== undefined)
+      assertIntegerAtLeast(args.bundledInsuranceCoverageMinorUnits, 0, "bundledInsuranceCoverageMinorUnits");
 
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     for (const [k, val] of Object.entries(args)) {
@@ -231,6 +236,7 @@ export const getDebtOverview = query({
         nextPaymentDate: v.number(),
         nextResetDate: v.union(v.number(), v.null()),
         obligationType: v.union(v.string(), v.null()),
+        bundledInsuranceCoverageMinorUnits: v.union(v.number(), v.null()),
         warnings: v.array(v.string()),
       }),
     ),
@@ -242,6 +248,13 @@ export const getDebtOverview = query({
       .query("obligations")
       .withIndex("by_household", (q) => q.eq("householdId", membership.householdId))
       .collect();
+
+    // Informational-only threshold for flagging a "large loan with no
+    // bundled insurance recorded" gap in Debt Overview — never fed into
+    // any affordability/prepayment calculation. ₹5,00,000 is a simple,
+    // round cutoff (a typical home-loan-sized balance); revisit once a
+    // real Insurance service can judge this per-household instead.
+    const LARGE_LOAN_THRESHOLD_MINOR_UNITS = 500_000; // ₹5,00,000 — "MinorUnits" here is a plain rupee integer, not paise (see documentIntelligence.ts's comment on the same convention)
 
     let totalOutstanding = 0;
     let combinedMonthly = 0;
@@ -259,6 +272,8 @@ export const getDebtOverview = query({
         warnings.push(`"${o.label}" has no remaining tenure and no rate, so its payoff date can't be estimated.`);
       if (o.rateType === "floating" && o.nextResetDate === undefined)
         warnings.push(`"${o.label}" is floating-rate but has no next reset date recorded.`);
+      if (o.bundledInsuranceCoverageMinorUnits === undefined && o.balanceMinorUnits >= LARGE_LOAN_THRESHOLD_MINOR_UNITS)
+        warnings.push(`"${o.label}" has a large outstanding balance with no bundled insurance recorded — worth checking whether it has any.`);
 
       return {
         obligationId: o._id,
@@ -276,6 +291,7 @@ export const getDebtOverview = query({
         nextPaymentDate: nextPaymentDate(o.dueDayOfMonth, args.now),
         nextResetDate: o.nextResetDate ?? null,
         obligationType: o.obligationType ?? null,
+        bundledInsuranceCoverageMinorUnits: o.bundledInsuranceCoverageMinorUnits ?? null,
         warnings,
       };
     });
@@ -849,6 +865,7 @@ export const gatherPrepaymentData = internalQuery({
         remainingTenureMonths: obligation.remainingTenureMonths ?? null,
         prepaymentTerms: obligation.prepaymentTerms ?? null,
         dueDayOfMonth: obligation.dueDayOfMonth,
+        bundledInsuranceCoverageMinorUnits: obligation.bundledInsuranceCoverageMinorUnits ?? null,
       },
       eligibleLiquidAssets,
       essentialMonthly,
@@ -895,6 +912,7 @@ export const simulatePrepayment = action({
         remainingTenureMonths: number | null;
         prepaymentTerms: string | null;
         dueDayOfMonth: number;
+        bundledInsuranceCoverageMinorUnits: number | null;
       };
       eligibleLiquidAssets: number;
       essentialMonthly: number;
@@ -985,6 +1003,7 @@ export const simulatePrepayment = action({
       rateType: ob.rateType,
       annualRatePercent: bpsToPercent(rateBps),
       prepaymentTermsText: ob.prepaymentTerms,
+      bundledInsuranceCoverageMinorUnits: ob.bundledInsuranceCoverageMinorUnits ?? null,
       baseline: {
         months: baseline.months === Infinity ? null : baseline.months,
         debtFreeDate: baseline.months === Infinity ? null : baseline.payoffDate,
@@ -1286,6 +1305,7 @@ export const simulatePrepaymentTarget = action({
         remainingTenureMonths: number | null;
         prepaymentTerms: string | null;
         dueDayOfMonth: number;
+        bundledInsuranceCoverageMinorUnits: number | null;
       };
       eligibleLiquidAssets: number;
       essentialMonthly: number;
@@ -1422,6 +1442,7 @@ Hard rules:
 - Never introduce, recompute, or round any number differently from the JSON. Quote figures as given, including net saving even if negative.
 - State clearly whether the loan's rate is fixed or floating (from rateType).
 - If prepaymentTermsText is present, briefly explain what that clause means for the user.
+- If bundledInsuranceCoverageMinorUnits is a number (not null), mention it as one plain factual sentence, e.g. "this loan includes bundled insurance covering ₹X of the balance" — informational only, never advice about whether that's enough. If it is null, say nothing about insurance at all — null means nothing was recorded, not that there is none.
 - "tradeoffs" = 2-4 short statements (e.g. liquidity given up vs interest saved).
 - "lenderQuestions" = 1-3 questions to confirm with the lender (e.g. exact prepayment charge, whether partial prepayment is allowed).
 - Do NOT decide whether the user should prepay; describe the outcome only.`;

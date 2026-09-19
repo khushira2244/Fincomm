@@ -8,6 +8,7 @@ const CATEGORY = v.union(
   v.literal("expenses"),
   v.literal("obligations"),
   v.literal("assets"),
+  v.literal("insurancePolicies"),
 );
 
 // No index combines householdId + targetEntityType + verificationStatus,

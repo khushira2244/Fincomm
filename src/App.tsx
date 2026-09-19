@@ -14,6 +14,11 @@ import { TimelineDetailScreen } from "./components/goalPlanning/TimelineDetailSc
 import { PlanAnalysisScreen } from "./components/goalPlanning/PlanAnalysisScreen";
 import { LoanDebtScreen } from "./components/loanDebt/LoanDebtScreen";
 import { SideIncomeScreen } from "./components/sideIncome/SideIncomeScreen";
+import { InvestmentScreen } from "./components/investment/InvestmentScreen";
+import { InsuranceScreen } from "./components/insurance/InsuranceScreen";
+import { TaxPlanningScreen } from "./components/tax/TaxPlanningScreen";
+import { GovernmentEconomicScreen } from "./components/governmentEconomic/GovernmentEconomicScreen";
+import { IncomeResilienceScreen } from "./components/incomeResilience/IncomeResilienceScreen";
 import { colors, fontSans } from "./theme";
 
 // FinComp — see the components/ folder for each piece. Financial
@@ -42,7 +47,38 @@ type Route =
   | { name: "goalPlanningDetail"; timelineId: Id<"timelines"> }
   | { name: "planAnalysis" }
   | { name: "loanDebt" }
-  | { name: "sideIncome" };
+  | { name: "sideIncome" }
+  | { name: "investment" }
+  | { name: "insurance" }
+  | { name: "tax" }
+  | { name: "governmentEconomic" }
+  | { name: "incomeResilience" };
+
+// Shared by Sidebar's onNavigate and any screen that routes into
+// another service directly (e.g. Income Resilience's "fix this in X"
+// links) — one place for the ServiceKey -> Route mapping.
+function serviceKeyToRoute(key: ServiceKey): Route {
+  switch (key) {
+    case "financialFoundation":
+      return { name: "financialFoundation" };
+    case "loanDebt":
+      return { name: "loanDebt" };
+    case "sideIncome":
+      return { name: "sideIncome" };
+    case "investment":
+      return { name: "investment" };
+    case "insurance":
+      return { name: "insurance" };
+    case "tax":
+      return { name: "tax" };
+    case "governmentEconomic":
+      return { name: "governmentEconomic" };
+    case "incomeResilience":
+      return { name: "incomeResilience" };
+    default:
+      return { name: "goalPlanningOverview" };
+  }
+}
 
 const ROUTE_STORAGE_KEY = "finComp:route";
 
@@ -57,7 +93,12 @@ function loadRoute(): Route {
         parsed.name === "goalPlanningDetail" ||
         parsed.name === "planAnalysis" ||
         parsed.name === "loanDebt" ||
-        parsed.name === "sideIncome"
+        parsed.name === "sideIncome" ||
+        parsed.name === "investment" ||
+        parsed.name === "insurance" ||
+        parsed.name === "tax" ||
+        parsed.name === "governmentEconomic" ||
+        parsed.name === "incomeResilience"
       ) {
         return parsed;
       }
@@ -83,16 +124,16 @@ function AuthenticatedApp() {
 
   if (mine === undefined) {
     return (
-      <>
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <Header />
         <div style={{ padding: "24px", color: colors.inkSoft }}>Loading…</div>
-      </>
+      </div>
     );
   }
 
   if (mine === null) {
     return (
-      <>
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <Header />
         <EmptyState
           heading="Start your financial foundation"
@@ -100,7 +141,7 @@ function AuthenticatedApp() {
           buttonLabel="Add financial details"
           onAction={() => void ensureHousehold()}
         />
-      </>
+      </div>
     );
   }
 
@@ -112,27 +153,33 @@ function AuthenticatedApp() {
         ? "loanDebt"
         : route.name === "sideIncome"
           ? "sideIncome"
-          : "goalPlanning";
+          : route.name === "investment"
+            ? "investment"
+            : route.name === "insurance"
+              ? "insurance"
+              : route.name === "tax"
+                ? "tax"
+                : route.name === "governmentEconomic"
+                  ? "governmentEconomic"
+                  : route.name === "incomeResilience"
+                    ? "incomeResilience"
+                    : "goalPlanning";
 
   return (
-    <div style={{ display: "flex" }}>
-      <Sidebar
-        activeKey={activeKey}
-        onNavigate={(key) =>
-          setRoute(
-            key === "financialFoundation"
-              ? { name: "financialFoundation" }
-              : key === "loanDebt"
-                ? { name: "loanDebt" }
-                : key === "sideIncome"
-                  ? { name: "sideIncome" }
-                  : { name: "goalPlanningOverview" },
-          )
-        }
-      />
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <Header />
+      <div style={{ display: "flex", flex: 1 }}>
+      <Sidebar activeKey={activeKey} onNavigate={(key) => setRoute(serviceKeyToRoute(key))} />
       {route.name === "financialFoundation" && <FinancialFoundationScreen />}
       {route.name === "loanDebt" && <LoanDebtScreen />}
       {route.name === "sideIncome" && <SideIncomeScreen />}
+      {route.name === "investment" && <InvestmentScreen />}
+      {route.name === "insurance" && (
+        <InsuranceScreen onNavigateToFinancialFoundation={() => setRoute({ name: "financialFoundation" })} />
+      )}
+      {route.name === "tax" && <TaxPlanningScreen />}
+      {route.name === "governmentEconomic" && <GovernmentEconomicScreen />}
+      {route.name === "incomeResilience" && <IncomeResilienceScreen onNavigate={(key) => setRoute(serviceKeyToRoute(key))} />}
       {route.name === "goalPlanningOverview" && (
         <TimelineOverviewScreen
           householdId={householdId}
@@ -153,6 +200,7 @@ function AuthenticatedApp() {
           onOpenTimeline={(timelineId) => setRoute({ name: "goalPlanningDetail", timelineId })}
         />
       )}
+      </div>
     </div>
   );
 }

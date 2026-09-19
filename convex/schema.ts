@@ -141,6 +141,12 @@ export default defineSchema({
     prepaymentTerms: v.optional(v.string()), // free text — explained by AI, not parsed for the charge
     nextResetDate: v.optional(v.number()), // floating-rate reset timestamp
     sourceDocumentId: v.optional(v.id("documents")),
+    // Insurance & Risk Planning prep (see insurancePolicies below). Some
+    // loans (home loans especially) bundle life/credit insurance that
+    // covers some or all of the outstanding balance on death. Purely
+    // informational surfacing in Debt Overview and loan narration — never
+    // read by the affordability/prepayment calculations themselves.
+    bundledInsuranceCoverageMinorUnits: v.optional(v.number()), // MUST be integer when present — enforced in updateLoanDetails
   }).index("by_household", ["householdId"]),
 
   assets: defineTable({
@@ -155,6 +161,33 @@ export default defineSchema({
     ),
     earmarkedForGoalId: v.optional(v.id("goals")),
     saleCostEstimateMinorUnits: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdByMemberId: v.id("memberships"),
+  }).index("by_household", ["householdId"]),
+
+  // Insurance & Risk Planning prep (Service #7 groundwork — this table is
+  // raw fact-capture only; no adequacy calculation reads it yet). Same
+  // FINANCE-table shape as incomeSources/expenses/obligations/assets
+  // above. Written by a plain add mutation (fact-capture form) and by
+  // Document Intelligence's extraction-confirm flow — never AI-applied
+  // directly.
+  insurancePolicies: defineTable({
+    householdId: v.id("households"),
+    type: v.union(
+      v.literal("life"),
+      v.literal("health"),
+      v.literal("motor"),
+      v.literal("property"),
+      v.literal("personalAccident"),
+      v.literal("other"),
+    ),
+    coverageAmountMinorUnits: v.number(), // MUST be integer — enforced in addInsurancePolicy
+    premiumMinorUnits: v.number(), // MUST be integer — enforced in addInsurancePolicy
+    premiumFrequency: v.union(v.literal("monthly"), v.literal("annual")),
+    currency: v.string(),
+    insurerName: v.optional(v.string()),
+    policyNumber: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     createdByMemberId: v.id("memberships"),
@@ -645,6 +678,11 @@ export default defineSchema({
     rateMinorUnitsPerHour: v.optional(v.number()),
     targetAmountMinorUnits: v.optional(v.number()),
     calcMode: v.optional(v.union(v.literal("timeFirst"), v.literal("incomeFirst"))),
+    // Location matters — someone open to offline/local work needs real,
+    // location-scoped results, not a generic "India"-wide search.
+    // Never guessed: only used to narrow the search when explicitly set.
+    workLocationPreference: v.optional(v.union(v.literal("online"), v.literal("offline"), v.literal("either"))),
+    location: v.optional(v.string()), // city/area — only meaningful when workLocationPreference isn't "online"
     // Business-specific — only meaningful when kind === "business"; same
     // enforcement note as above.
     ideaDescription: v.optional(v.string()),
@@ -748,9 +786,19 @@ export default defineSchema({
     .index("by_entry", ["sideIncomeEntryId"])
     .index("by_household", ["householdId"]),
 
+  // Generic across every service, not just Side-Income — sourceService
+  // names which service is asking ("sideIncome" | "investment" | future
+  // services) and sourceEntityId is that service's own record id, stored
+  // as a plain string since it can point to different tables. No
+  // schema-level foreign key is possible across arbitrary tables, so
+  // ownership of the referenced entity is NOT re-verified here — this
+  // table only logs interest (never exposes or grants access to data),
+  // and every insert is already scoped to the caller's own household via
+  // requireMembership.
   humanConsultRequests: defineTable({
     householdId: v.id("households"),
-    sideIncomeEntryId: v.id("sideIncomeEntries"),
+    sourceService: v.string(),
+    sourceEntityId: v.string(),
     topic: v.string(),
     // Fixed literal, not a union — this hackathon only ever logs
     // interest; there's no real scheduling process, so
@@ -759,7 +807,420 @@ export default defineSchema({
     requestedAt: v.number(),
   })
     .index("by_household", ["householdId"])
-    .index("by_entry", ["sideIncomeEntryId"]),
+    .index("by_source", ["sourceService", "sourceEntityId"]),
+
+  // ===================================================================
+  // INVESTMENT & RISK PLANNING (Service #6). Strictest AI boundary yet:
+  // every number is pulled from the household's own existing data, pure
+  // deterministic arithmetic, or a raw sourced reference — never an
+  // invented return rate, tax slab, or readiness verdict, and never a
+  // specific product recommendation. Reuses sourceRegistry/
+  // sourceSnapshots (defined above) for every Firecrawl-backed piece.
+  // ===================================================================
+
+  investmentReadinessChecks: defineTable({
+    householdId: v.id("households"),
+    eligibleLiquidReserveMinorUnits: v.number(),
+    emergencyReserveTargetMinorUnits: v.number(),
+    earmarkedForGoalsMinorUnits: v.number(),
+    investableSurplusMinorUnits: v.number(), // reserve − target − earmarked, deterministic
+    existingEmiTotalMinorUnits: v.number(),
+    activeGoalCount: v.number(),
+    readinessState: v.union(
+      v.literal("NO_SURPLUS_YET"),
+      v.literal("LIMITED_CAPACITY"),
+      v.literal("MODERATE_CAPACITY"),
+      v.literal("STRONG_CAPACITY"),
+      v.literal("INSUFFICIENT_DATA"),
+    ),
+    narration: v.optional(
+      v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    ),
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  investmentScenarios: defineTable({
+    householdId: v.id("households"),
+    timelineId: v.optional(v.id("timelines")),
+    monthlyContributionMinorUnits: v.number(),
+    horizonYears: v.number(),
+    assumedAnnualReturnRangeLow: v.number(), // percent, e.g. 8 for 8%
+    assumedAnnualReturnRangeHigh: v.number(),
+    assumptionSourceNote: v.string(), // where this range came from, or "placeholder — no source found"
+    assumptionSourceSnapshotId: v.optional(v.id("sourceSnapshots")),
+    projectedRangeLowMinorUnits: v.number(),
+    projectedRangeHighMinorUnits: v.number(),
+    narration: v.optional(
+      v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    ),
+    inputHash: v.string(), // contribution/horizon/timeline are user-varied — needs a real cache key
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_household_timeline", ["householdId", "timelineId"]),
+
+  // Deliberately a separable module (convex/taxBracket.ts) — Tax
+  // Planning (Service #8) will import its lookup function directly
+  // rather than reimplementing slab parsing.
+  taxBracketEstimates: defineTable({
+    householdId: v.id("households"),
+    annualIncomeMinorUnits: v.number(),
+    estimatedSlabLabel: v.string(),
+    sourceSnapshotId: v.optional(v.id("sourceSnapshots")),
+    narration: v.optional(v.object({ headline: v.string(), plainLanguage: v.string() })),
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  // NOT household-scoped — shared, general, non-product-specific
+  // reference data, same pattern as sourceRegistry/sourceSnapshots.
+  assetCategoryReferences: defineTable({
+    category: v.union(
+      v.literal("fixedDeposit"),
+      v.literal("governmentBond"),
+      v.literal("indexFund"),
+      v.literal("mutualFund"),
+      v.literal("ppf"),
+      v.literal("gold"),
+    ),
+    description: v.string(),
+    sourceSnapshotId: v.optional(v.id("sourceSnapshots")),
+    fetchedAt: v.number(), // 30-day staleness window — reused, longer than loan-rate/side-income windows
+  }).index("by_category", ["category"]),
+
+  // ===================================================================
+  // INSURANCE, PROTECTION & FINANCIAL RIGHTS (Service #7). Same
+  // strictest-boundary discipline as Investment: every number is either
+  // pulled from the household's own existing data (insurancePolicies,
+  // obligations, incomeSources, timelineFamilySupport) or pure
+  // deterministic arithmetic over it. OpenAI only narrates an
+  // ALREADY-DECIDED gap/state/step list — it never invents a coverage-
+  // need figure, decides whether a gap exists, or names a specific
+  // insurer/product/premium. Reuses sourceRegistry/sourceSnapshots for
+  // every Firecrawl-backed piece, same as every other service.
+  // ===================================================================
+
+  // NOT household-scoped — shared, general, non-product-specific
+  // reference data, same pattern as assetCategoryReferences.
+  insuranceCategoryReferences: defineTable({
+    category: v.union(
+      v.literal("life"),
+      v.literal("health"),
+      v.literal("motor"),
+      v.literal("property"),
+      v.literal("personalAccident"),
+      v.literal("other"),
+    ),
+    description: v.string(),
+    sourceSnapshotId: v.optional(v.id("sourceSnapshots")),
+    fetchedAt: v.number(), // 30-day staleness window — same as assetCategoryReferences
+  }).index("by_category", ["category"]),
+
+  // Cached adequacy verdict. Every input field is captured on the row
+  // (not just the outputs) so the row is self-explaining and reusable
+  // for "email me a summary" without re-deriving anything.
+  insuranceAdequacyChecks: defineTable({
+    householdId: v.id("households"),
+    totalLifeCoverageMinorUnits: v.number(),
+    totalHealthCoverageMinorUnits: v.number(),
+    // Proxy, not a literal headcount — see diagnoseAdequacy's comment in
+    // convex/insuranceRiskPlanning.ts: count of timelineFamilySupport
+    // rows across the household's CONFIRMED timelines.
+    dependentsCount: v.number(),
+    outstandingLoanBalanceMinorUnits: v.number(),
+    bundledLifeCoverageMinorUnits: v.number(), // sum of obligations.bundledInsuranceCoverageMinorUnits
+    dependableMonthlyIncome: v.number(),
+    estimatedLifeCoverNeededMinorUnits: v.number(), // outstandingLoanBalance + 10 × dependableAnnualIncome
+    lifeCoverageGapMinorUnits: v.number(), // needed − (total + bundled); negative = surplus
+    healthCoverageAssessment: v.union(
+      v.literal("NONE"),
+      v.literal("LIKELY_INSUFFICIENT"),
+      v.literal("LIKELY_ADEQUATE"),
+      v.literal("INSUFFICIENT_DATA"),
+    ),
+    narration: v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  // NOT household-scoped — shared, sourced regulatory-process reference
+  // data. insuranceType is a free string (not the insurancePolicies
+  // type union) since portability guidance may cover types beyond that
+  // enum later without a schema change.
+  insurancePortabilityGuides: defineTable({
+    insuranceType: v.string(), // e.g. "health" — the type this guide applies to
+    steps: v.array(v.object({ title: v.string(), detail: v.string() })),
+    sourceSnapshotId: v.optional(v.id("sourceSnapshots")),
+    fetchedAt: v.number(), // 90-day staleness window — regulatory process pages change rarely
+  }).index("by_type", ["insuranceType"]),
+
+  // Cached, cross-service gap findings. Pure deterministic detection
+  // (see detectGaps) — OpenAI only narrates which gaps were already found.
+  insuranceGapDetections: defineTable({
+    householdId: v.id("households"),
+    gaps: v.array(
+      v.object({
+        gapType: v.string(), // e.g. "noLifeCoverWithDebt", "noHealthCoverSoleEarner", "businessWithoutLiabilityConsidered"
+        description: v.string(),
+        severity: v.union(v.literal("notable"), v.literal("significant")),
+      }),
+    ),
+    narration: v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  // ===================================================================
+  // TAX PLANNING (Service #8). Reuses convex/taxBracket.ts's exported
+  // lookupTaxSlab/TaxSlab (never duplicated) for the actual slab-
+  // threshold lookup; that module only ever parsed the New Regime
+  // column, so Old Regime slab parsing and full progressive-tax
+  // computation are new, separate logic added here — not a
+  // reimplementation of what taxBracket.ts already does. GST
+  // (gstRegistered on taxProfiles) is informational only and never
+  // feeds any calculation in this file or anywhere else.
+  // ===================================================================
+
+  taxProfiles: defineTable({
+    householdId: v.id("households"),
+    employmentType: v.union(v.literal("salaried"), v.literal("selfEmployed")),
+    approximateTdsDeductedMinorUnits: v.optional(v.number()), // salaried only
+    hraClaimedMinorUnits: v.optional(v.number()), // salaried only
+    approximateNetBusinessIncomeMinorUnits: v.optional(v.number()), // self-employed only — ANNUAL net income, not revenue
+    // Honest direct input — no household-scoped record of actual 80C
+    // holdings (PPF/ELSS/etc.) exists anywhere else in the app;
+    // assetCategoryReferences is shared education content, not a
+    // per-household ledger.
+    approximate80CInvestmentMinorUnits: v.optional(v.number()),
+    gstRegistered: v.optional(v.boolean()), // informational only — never read by any calculation
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdByMemberId: v.id("memberships"),
+  }).index("by_household", ["householdId"]),
+
+  // Represents OLD-REGIME-ELIGIBLE deductions specifically — under
+  // current law the new regime disallows nearly all of HRA/80C/80D/
+  // 24(b) and uses its own separate standard deduction, so a single
+  // combined total can't represent both regimes. The new-regime side
+  // of taxRegimeComparisons computes its own taxable income separately.
+  taxDeductionSummaries: defineTable({
+    householdId: v.id("households"),
+    loanInterestDeductionMinorUnits: v.number(), // Sec 24(b) — homeLoan obligations, capped at the real sourced limit
+    insurancePremiumDeductionMinorUnits: v.number(), // Sec 80D — health-type insurancePolicies only, capped
+    investmentDeductionMinorUnits: v.number(), // Sec 80C — life-type policy premiums + approximate80CInvestmentMinorUnits, capped
+    standardDeductionMinorUnits: v.number(), // fixed, sourced, old-regime figure — salaried only, 0 for self-employed
+    totalDeductionsMinorUnits: v.number(),
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  taxRegimeComparisons: defineTable({
+    householdId: v.id("households"),
+    oldRegimeEstimatedTaxMinorUnits: v.number(),
+    newRegimeEstimatedTaxMinorUnits: v.number(),
+    recommendedRegime: v.union(v.literal("old"), v.literal("new"), v.literal("similar")), // "similar" within ₹1,000
+    narration: v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    inputHash: v.string(), // employmentType + income + deduction inputs vary per household — real cache key needed
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  taxDeductionGaps: defineTable({
+    householdId: v.id("households"),
+    gaps: v.array(
+      v.object({
+        gapType: v.string(), // e.g. "unclaimedInsuranceDeduction", "unclaimedInvestmentDeduction", "noProfileSet"
+        description: v.string(),
+        estimatedMissedDeductionMinorUnits: v.optional(v.number()),
+      }),
+    ),
+    narration: v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    inputStateRevision: v.number(),
+    createdAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  // NOT household-scoped — shared reference data, same pattern as
+  // assetCategoryReferences/insuranceCategoryReferences. Deliberately
+  // light: 1-2 real items only, never a full news/intelligence feed —
+  // that's explicitly deferred to Government, Economic & Livelihood
+  // Intelligence.
+  taxEconomicContextItems: defineTable({
+    title: v.string(),
+    description: v.string(),
+    sourceSnapshotId: v.optional(v.id("sourceSnapshots")),
+    sourceUrl: v.string(),
+    sourceLabel: v.string(),
+    fetchedAt: v.number(), // 30+ day staleness window — doesn't need to be live-fresh
+  }).index("by_fetchedAt", ["fetchedAt"]),
+
+  // ===================================================================
+  // GOVERNMENT, ECONOMIC & LIVELIHOOD INTELLIGENCE (Service #9).
+  // Structurally different from every prior service: PUSH (a cron
+  // monitors real sources and alerts the household when something
+  // material changes), with a light PULL layer (profile + findings
+  // feed) on top. Two tracks: "job" (salaried work — rate/sector/
+  // inflation signals) and "business" (ACTIVE/graduated Side-Income
+  // entries only — rate/sector/scheme/regulatory signals). Reuses
+  // sourceRegistry/sourceSnapshots for every Firecrawl-backed piece and
+  // humanConsultRequests (sourceService: "governmentEconomic").
+  // ===================================================================
+
+  livelihoodProfiles: defineTable({
+    householdId: v.id("households"),
+    track: v.union(v.literal("job"), v.literal("business")),
+    freeTextDescription: v.string(),
+    source: v.union(
+      v.literal("userProvided"),
+      v.literal("prefilledFromIncomeSource"),
+      v.literal("prefilledFromSideIncome"),
+    ),
+    // Job track — AI-EXTRACTED from freeTextDescription (extraction,
+    // same pattern as Document Intelligence — never a calculation).
+    interpretedOccupation: v.optional(v.string()),
+    interpretedSector: v.optional(v.string()),
+    interpretedState: v.optional(v.string()),
+    // Business track — one row per active/graduated Side-Income entry.
+    sideIncomeEntryId: v.optional(v.id("sideIncomeEntries")),
+    interpretedBusinessType: v.optional(v.string()),
+    interpretedApproxIncomeMinorUnits: v.optional(v.number()),
+    // Deterministic — computed in code, never by the model.
+    missingFields: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_household_track", ["householdId", "track"])
+    .index("by_sideIncomeEntry", ["sideIncomeEntryId"]),
+
+  economicFindings: defineTable({
+    householdId: v.id("households"),
+    track: v.union(v.literal("job"), v.literal("business")),
+    findingType: v.union(
+      v.literal("interestRate"),
+      v.literal("sectorRisk"),
+      v.literal("scheme"),
+      v.literal("regulatory"),
+    ),
+    // Deterministic per-findingType threshold — see governmentEconomic.ts.
+    severity: v.union(v.literal("notable"), v.literal("significant")),
+    title: v.string(),
+    headline: v.string(), // deterministic, factual
+    body: v.optional(v.string()),
+    steps: v.optional(v.array(v.string())), // findingType decides which is populated
+    affectsService: v.string(), // "loanDebt" | "sideIncome" | "financialFoundation" | "goalPlanning"
+    affectsEntityId: v.optional(v.string()),
+    narration: v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    sourceSnapshotId: v.id("sourceSnapshots"), // required — a finding only exists because of a real scrape
+    generatedAt: v.number(),
+    emailSent: v.boolean(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_household_track", ["householdId", "track"])
+    .index("by_household_generatedAt", ["householdId", "generatedAt"]),
+
+  economicFindingDeepDives: defineTable({
+    householdId: v.id("households"),
+    findingId: v.id("economicFindings"),
+    result: v.any(),
+    sourceSnapshotIds: v.array(v.id("sourceSnapshots")),
+    fetchedAt: v.number(),
+    createdAt: v.number(),
+  }).index("by_household_finding", ["householdId", "findingId"]),
+
+  economicMonitoringState: defineTable({
+    householdId: v.id("households"),
+    track: v.union(v.literal("job"), v.literal("business")),
+    signalType: v.string(), // "referenceRate" | "sectorRisk:<sector>" | "scheme:<entryId>:<businessType>" | "regulatory:<entryId>:<businessType>"
+    lastKnownValue: v.any(),
+    lastCheckedAt: v.number(),
+  }).index("by_household_track_signal", ["householdId", "track", "signalType"]),
+
+  // ===================================================================
+  // INCOME RESILIENCE (Service #10). Cross-service synthesis, not a new
+  // domain of its own — reads live from Financial Foundation, Loan &
+  // Debt, Insurance, Side-Income, Investment, and Government/Economic
+  // Intelligence, and is otherwise fully reactive (no save button, no
+  // stored computation for the interactive view). These two tables
+  // exist only for what genuinely needs persistence: a real, sourced
+  // benchmark (not hardcoded from training data), and a snapshot
+  // written ONLY when the household's tier actually changes, so the
+  // proactive alert (piggybacking on the existing daily cron) has a
+  // real "last known tier" to compare against and a trend line can be
+  // shown honestly.
+  // ===================================================================
+
+  incomeResilienceSnapshots: defineTable({
+    householdId: v.id("households"),
+    tier: v.union(v.literal("resilient"), v.literal("worthALook"), v.literal("atRisk")),
+    incomeConcentrationPercent: v.number(),
+    runwayMonths: v.number(),
+    emiToIncomeRatioPercent: v.number(),
+    hasBreachedObligation: v.boolean(),
+    hasIncomeProtectionInsurance: v.boolean(),
+    liquidInvestmentsMinorUnits: v.number(),
+    hasBackupIncomeInProgress: v.boolean(),
+    hasRecentSignificantEconomicFinding: v.boolean(),
+    weakDimensions: v.array(v.string()),
+    narration: v.object({ headline: v.string(), plainLanguage: v.string(), caveats: v.array(v.string()) }),
+    emailSent: v.boolean(),
+    generatedAt: v.number(),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_household_generatedAt", ["householdId", "generatedAt"]),
+
+  // NOT household-scoped — shared reference data, same pattern as
+  // taxEconomicContextItems/assetCategoryReferences. One real, sourced
+  // benchmark (e.g. recommended emergency-fund coverage), never a
+  // hardcoded "6 months" rule of thumb from training data.
+  incomeResilienceBenchmarks: defineTable({
+    label: v.string(),
+    description: v.string(),
+    recommendedMonths: v.optional(v.number()), // deterministically parsed (regex) from the real source, never AI-guessed
+    sourceSnapshotId: v.optional(v.id("sourceSnapshots")),
+    sourceUrl: v.string(),
+    sourceLabel: v.string(),
+    fetchedAt: v.number(),
+  }).index("by_fetchedAt", ["fetchedAt"]),
+
+  // One living note per household — overwritten on each save, not a
+  // log. The one thing Income Resilience can't see from structured
+  // data alone (worried about layoffs, a health issue, a dependent, a
+  // life event coming up). interpretedConcernCategory is AI-EXTRACTED
+  // from the free text (same extraction-only boundary as Document
+  // Intelligence / Government Economic Intelligence's livelihood
+  // profiles) — it never changes the deterministic tier or weak
+  // -dimension list, only adds honest context to the narration, read by
+  // both the on-demand check and the weekly cron sweep.
+  incomeResilienceNotes: defineTable({
+    householdId: v.id("households"),
+    freeText: v.string(),
+    interpretedConcernCategory: v.optional(
+      v.union(
+        v.literal("jobSecurity"),
+        v.literal("healthOrDependent"),
+        v.literal("majorLifeEvent"),
+        v.literal("businessConcern"),
+        v.literal("none"),
+      ),
+    ),
+    updatedAt: v.number(),
+  }).index("by_household", ["householdId"]),
+
+  // Deploy tooling, not app data — no PII, not household-scoped. Maps a
+  // request path (e.g. "/index.html", "/assets/index-XkLXvLKj.css") to
+  // the Convex file-storage blob for that built frontend asset, so
+  // convex/http.ts's catch-all route can serve the real Vite build
+  // directly from this deployment's own *.convex.site domain. Wiped
+  // and rewritten in full on every static-site deploy (see
+  // scripts/deploy-static-site.mjs) — never partially patched, so a
+  // deploy can't leave a stale mix of old and new files.
+  staticAssets: defineTable({
+    path: v.string(),
+    storageId: v.id("_storage"),
+    contentType: v.string(),
+  }).index("by_path", ["path"]),
 });
 
 // =====================================================================

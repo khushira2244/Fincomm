@@ -220,6 +220,8 @@ function JobPanel({
   onSingle: (entryId: Id<"sideIncomeEntries">, opportunityId?: Id<"sideIncomeOpportunities">) => void;
 }) {
   const typeOfWork = useDraft("sideIncome:job:typeOfWork");
+  const workLocationPreference = useDraft("sideIncome:job:workLocationPreference");
+  const location = useDraft("sideIncome:job:location");
   const hoursPerWeek = useDraft("sideIncome:job:hoursPerWeek");
   const availabilityWindow = useDraft("sideIncome:job:availabilityWindow");
   const targetAmount = useDraft("sideIncome:job:targetAmount");
@@ -228,6 +230,7 @@ function JobPanel({
   const create = useMutation(api.sideIncome.createSideIncomeEntry);
   const update = useMutation(api.sideIncome.updateSideIncomeEntry);
   const estimate = useAction(api.sideIncome.estimateJobIncomeRange);
+  const extractIntent = useAction(api.sideIncome.extractJobIntent);
   const build = useMutation(api.sideIncome.buildCombinedPlan);
 
   const [entryId, setEntryId] = useState<Id<"sideIncomeEntries"> | null>(null);
@@ -247,13 +250,67 @@ function JobPanel({
     try {
       let id = entryId;
       if (id === null) {
+        // Extraction fills in whatever the household left blank in the
+        // structured fields below — it never overwrites something they
+        // already typed themselves, and only runs at all if there's
+        // actually a free-text description AND something to fill.
+        let finalHoursPerWeek = hoursPerWeek.value.trim();
+        let finalAvailability = availabilityWindow.value;
+        let finalTarget = targetAmount.value.trim();
+        let finalLocationPref = workLocationPreference.value;
+        let finalLocation = location.value.trim();
+        const description = (overrideTypeOfWork ?? typeOfWork.value).trim();
+        // The raw free text is the richest signal for the search itself
+        // (used below via `description`), but a full paragraph makes a
+        // messy stored "type of work" label — swap it for extraction's
+        // clean short label when one comes back.
+        let finalTypeOfWork = description;
+        const needsExtraction = description !== "" && (finalHoursPerWeek === "" || finalTarget === "" || finalLocationPref === "");
+        if (needsExtraction) {
+          try {
+            const extracted = (await extractIntent({ freeText: description })) as {
+              typeOfWork: string | null;
+              hoursPerWeek: number | null;
+              availabilityWindow: string | null;
+              targetAmountMinorUnits: number | null;
+              workLocationPreference: "online" | "offline" | "either" | null;
+              location: string | null;
+            };
+            if (extracted.typeOfWork) finalTypeOfWork = extracted.typeOfWork;
+            if (finalHoursPerWeek === "" && extracted.hoursPerWeek !== null) {
+              finalHoursPerWeek = String(extracted.hoursPerWeek);
+              hoursPerWeek.setValue(finalHoursPerWeek);
+            }
+            if (finalAvailability === "" && extracted.availabilityWindow) {
+              finalAvailability = extracted.availabilityWindow;
+              availabilityWindow.setValue(finalAvailability);
+            }
+            if (finalTarget === "" && extracted.targetAmountMinorUnits !== null) {
+              finalTarget = String(extracted.targetAmountMinorUnits);
+              targetAmount.setValue(finalTarget);
+            }
+            if (finalLocationPref === "" && extracted.workLocationPreference) {
+              finalLocationPref = extracted.workLocationPreference;
+              workLocationPreference.setValue(finalLocationPref);
+            }
+            if (finalLocation === "" && extracted.location) {
+              finalLocation = extracted.location;
+              location.setValue(finalLocation);
+            }
+          } catch {
+            // Extraction is best-effort — fall through and create with
+            // whatever the household explicitly filled in themselves.
+          }
+        }
         id = await create({
           kind: "job",
-          typeOfWork: (overrideTypeOfWork ?? typeOfWork.value).trim() || undefined,
-          hoursPerWeek: hoursPerWeek.value.trim() === "" ? undefined : Number(hoursPerWeek.value),
-          availabilityWindow: availabilityWindow.value || undefined,
+          typeOfWork: finalTypeOfWork || undefined,
+          hoursPerWeek: finalHoursPerWeek === "" ? undefined : Number(finalHoursPerWeek),
+          availabilityWindow: finalAvailability || undefined,
           rateKnown: false,
-          targetAmountMinorUnits: targetAmount.value.trim() === "" ? undefined : Number(targetAmount.value),
+          targetAmountMinorUnits: finalTarget === "" ? undefined : Number(finalTarget),
+          workLocationPreference: (finalLocationPref || undefined) as "online" | "offline" | "either" | undefined,
+          location: finalLocationPref !== "online" ? finalLocation || undefined : undefined,
         });
         setEntryId(id);
       } else if (overrideTypeOfWork !== undefined) {
@@ -271,6 +328,18 @@ function JobPanel({
       } else {
         setInsufficient(r.reason);
       }
+    } catch (err) {
+      // Most commonly: a free-text description didn't mention time
+      // clearly enough for extraction to find weekly hours, and none
+      // was typed into "Hours per week" either — say so plainly instead
+      // of failing silently.
+      setInsufficient(
+        err instanceof Error && err.message.includes("hoursPerWeek")
+          ? "We couldn't tell how many hours a week you have from what you wrote — add a number in \"Hours per week\" below and try again."
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      );
     } finally {
       setBusy(false);
     }
@@ -295,9 +364,32 @@ function JobPanel({
         <StepHeading n={1}>What kind of work?</StepHeading>
         <NoticeBox>Not sure yet? That's fine — leave this blank and we'll work from your time and target amount instead.</NoticeBox>
         <label style={cell}>
-          Type of work (optional)
-          <input style={f} value={typeOfWork.value} onChange={(e) => typeOfWork.setValue(e.target.value)} placeholder="Leave blank if you're not sure" />
+          Tell us in your own words (optional)
+          <textarea
+            style={{ ...f, minHeight: "80px", resize: "vertical", fontFamily: "inherit" }}
+            value={typeOfWork.value}
+            onChange={(e) => typeOfWork.setValue(e.target.value)}
+            placeholder="e.g. I have some weekend mornings free and want to earn around ₹15,000/month — thinking tutoring or freelance writing, open to local work near me"
+          />
+          <span style={{ fontSize: "11.5px", color: colors.inkSoft }}>
+            Mention your hours, target amount, or location here too if you want — we&rsquo;ll pick them up and fill in the fields below, which you can still edit.
+          </span>
         </label>
+        <label style={{ ...cell, marginTop: "10px" }}>
+          Where?
+          <select style={f} value={workLocationPreference.value} onChange={(e) => workLocationPreference.setValue(e.target.value)}>
+            <option value="">Choose…</option>
+            <option value="online">Remote / online only</option>
+            <option value="offline">Local / in-person only</option>
+            <option value="either">Either is fine</option>
+          </select>
+        </label>
+        {(workLocationPreference.value === "offline" || workLocationPreference.value === "either") && (
+          <label style={{ ...cell, marginTop: "10px" }}>
+            Which city or area?
+            <input style={f} value={location.value} onChange={(e) => location.setValue(e.target.value)} placeholder="e.g. Hyderabad, or a specific neighbourhood" />
+          </label>
+        )}
       </Card>
 
       <Card>
@@ -328,7 +420,7 @@ function JobPanel({
         </label>
         <button
           style={{ ...primaryButtonStyle, marginTop: "12px" }}
-          disabled={busy || hoursPerWeek.value.trim() === ""}
+          disabled={busy || (hoursPerWeek.value.trim() === "" && typeOfWork.value.trim() === "")}
           onClick={() => void findIdeas()}
         >
           {busy ? "Finding ideas…" : "Find ideas"}
@@ -455,6 +547,7 @@ function BusinessPanel({ onOpen }: { onOpen: (entryId: Id<"sideIncomeEntries">, 
 
   const create = useMutation(api.sideIncome.createSideIncomeEntry);
   const checkReserve = useAction(api.sideIncome.checkBusinessReserve);
+  const extractIntent = useAction(api.sideIncome.extractBusinessIntent);
   const [reserveResult, setReserveResult] = useState<{ hasConflict: boolean; conflictDetail: string; reserveAfterMinorUnits: number } | null>(null);
   const [entryId, setEntryId] = useState<Id<"sideIncomeEntries"> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -464,18 +557,60 @@ function BusinessPanel({ onOpen }: { onOpen: (entryId: Id<"sideIncomeEntries">, 
     setError(null);
     setBusy(true);
     try {
+      // Extraction fills in whatever the household left blank — never
+      // overwrites something they already typed themselves, and only
+      // runs if there's actually something for it to fill.
+      let finalIdea = ideaDescription.value.trim();
+      let finalCapital = startupCapital.value.trim();
+      let finalEffort = effortHours.value.trim();
+      let finalRampUp = rampUp.value.trim();
+      if (finalIdea !== "" && (finalCapital === "" || finalEffort === "" || finalRampUp === "")) {
+        try {
+          const extracted = (await extractIntent({ freeText: finalIdea })) as {
+            ideaDescription: string | null;
+            startupCapitalMinorUnits: number | null;
+            effortHoursPerWeek: number | null;
+            rampUpMonths: number | null;
+          };
+          // Same swap as the job panel — a full paragraph makes a messy
+          // stored idea label, so use extraction's clean restatement
+          // when one comes back.
+          if (extracted.ideaDescription) finalIdea = extracted.ideaDescription;
+          if (finalCapital === "" && extracted.startupCapitalMinorUnits !== null) {
+            finalCapital = String(extracted.startupCapitalMinorUnits);
+            startupCapital.setValue(finalCapital);
+          }
+          if (finalEffort === "" && extracted.effortHoursPerWeek !== null) {
+            finalEffort = String(extracted.effortHoursPerWeek);
+            effortHours.setValue(finalEffort);
+          }
+          if (finalRampUp === "" && extracted.rampUpMonths !== null) {
+            finalRampUp = String(extracted.rampUpMonths);
+            rampUp.setValue(finalRampUp);
+          }
+        } catch {
+          // Extraction is best-effort — fall through with whatever the
+          // household explicitly filled in themselves.
+        }
+      }
       const id = await create({
         kind: "business",
-        ideaDescription: ideaDescription.value.trim() || undefined,
-        startupCapitalMinorUnits: startupCapital.value.trim() === "" ? undefined : Number(startupCapital.value),
-        effortHoursPerWeek: effortHours.value.trim() === "" ? undefined : Number(effortHours.value),
-        rampUpMonths: rampUp.value.trim() === "" ? undefined : Number(rampUp.value),
+        ideaDescription: finalIdea || undefined,
+        startupCapitalMinorUnits: finalCapital === "" ? undefined : Number(finalCapital),
+        effortHoursPerWeek: finalEffort === "" ? undefined : Number(finalEffort),
+        rampUpMonths: finalRampUp === "" ? undefined : Number(finalRampUp),
       });
       setEntryId(id);
       const r = (await checkReserve({ entryId: id })) as { hasConflict: boolean; conflictDetail: string; reserveAfterMinorUnits: number };
       setReserveResult(r);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(
+        err instanceof Error && err.message.includes("startupCapitalMinorUnits")
+          ? "We couldn't tell your startup capital from what you wrote — add a number in \"Startup capital\" below and try again."
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      );
     } finally {
       setBusy(false);
     }
@@ -486,8 +621,16 @@ function BusinessPanel({ onOpen }: { onOpen: (entryId: Id<"sideIncomeEntries">, 
       <Card>
         <StepHeading n={1}>What's the idea?</StepHeading>
         <label style={cell}>
-          Idea description
-          <input style={f} value={ideaDescription.value} onChange={(e) => ideaDescription.setValue(e.target.value)} placeholder="e.g. home-based tiffin service" />
+          Tell us in your own words
+          <textarea
+            style={{ ...f, minHeight: "80px", resize: "vertical", fontFamily: "inherit" }}
+            value={ideaDescription.value}
+            onChange={(e) => ideaDescription.setValue(e.target.value)}
+            placeholder="e.g. home-based tiffin service, I'm thinking around ₹15,000 startup capital, could put in maybe 10 hours a week and expect it to take a couple months to get going"
+          />
+          <span style={{ fontSize: "11.5px", color: colors.inkSoft }}>
+            Mention your budget, time, or ramp-up expectations here too if you want — we&rsquo;ll pick them up and fill in the fields below, which you can still edit.
+          </span>
         </label>
       </Card>
       <Card>
@@ -987,7 +1130,7 @@ function AskBox({ entryId }: { entryId: Id<"sideIncomeEntries"> }) {
 }
 
 function ConsultBox({ entryId, topic }: { entryId: Id<"sideIncomeEntries">; topic: string }) {
-  const request = useMutation(api.sideIncome.requestHumanConsult);
+  const request = useMutation(api.humanConsult.requestHumanConsult);
   const [sent, setSent] = useState(false);
 
   return (
@@ -1000,7 +1143,13 @@ function ConsultBox({ entryId, topic }: { entryId: Id<"sideIncomeEntries">; topi
       }}
     >
       <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "8px" }}>Want a real person's opinion?</div>
-      <button style={ghostButtonStyle} disabled={sent} onClick={() => void request({ entryId, topic }).then(() => setSent(true))}>
+      <button
+        style={ghostButtonStyle}
+        disabled={sent}
+        onClick={() =>
+          void request({ sourceService: "sideIncome", sourceEntityId: entryId, topic }).then(() => setSent(true))
+        }
+      >
         {sent ? "Interest logged ✓" : "Request interest in a consultation"}
       </button>
       <div style={{ fontSize: "11px", color: colors.inkSoft, marginTop: "6px" }}>

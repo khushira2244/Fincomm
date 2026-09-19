@@ -158,6 +158,7 @@ type DebtRow = {
   nextPaymentDate: number;
   nextResetDate: number | null;
   obligationType: string | null;
+  bundledInsuranceCoverageMinorUnits: number | null;
   warnings: string[];
 };
 
@@ -181,6 +182,11 @@ function DebtCard({ debt }: { debt: DebtRow }) {
             {debt.rateType === "floating" &&
               ` · next rate reset ${debt.nextResetDate ? dayMonth(debt.nextResetDate) : "unknown"}`}
           </div>
+          <div style={{ fontSize: "12px", color: colors.inkSoft, marginTop: "2px" }}>
+            {debt.bundledInsuranceCoverageMinorUnits !== null
+              ? `Bundled insurance covers ${rupee(debt.bundledInsuranceCoverageMinorUnits)} of the balance`
+              : "No bundled insurance recorded"}
+          </div>
         </div>
         <button style={ghostButtonStyle} onClick={() => setEditing(!editing)}>
           {editing ? "Close" : "Edit loan details"}
@@ -202,6 +208,7 @@ function LoanDetailsForm({ obligationId, onDone }: { obligationId: Id<"obligatio
   const [minPayment, setMinPayment] = useState("");
   const [fees, setFees] = useState("");
   const [prepayTerms, setPrepayTerms] = useState("");
+  const [bundledInsurance, setBundledInsurance] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const submit = (e: FormEvent) => {
@@ -216,6 +223,7 @@ function LoanDetailsForm({ obligationId, onDone }: { obligationId: Id<"obligatio
     if (minPayment.trim() !== "") args.minimumPaymentMinorUnits = Number(minPayment);
     if (fees.trim() !== "") args.feesMinorUnits = Number(fees);
     if (prepayTerms.trim() !== "") args.prepaymentTerms = prepayTerms.trim();
+    if (bundledInsurance.trim() !== "") args.bundledInsuranceCoverageMinorUnits = Number(bundledInsurance);
     void update(args as never)
       .then(() => onDone())
       .catch((err: Error) => setError(err.message));
@@ -273,6 +281,15 @@ function LoanDetailsForm({ obligationId, onDone }: { obligationId: Id<"obligatio
       <label style={cell}>
         Fees (₹)
         <input style={field} value={fees} onChange={(e) => setFees(e.target.value)} />
+      </label>
+      <label style={cell}>
+        Bundled insurance coverage (₹)
+        <input
+          style={field}
+          value={bundledInsurance}
+          onChange={(e) => setBundledInsurance(e.target.value)}
+          placeholder="e.g. life/credit insurance bundled with this loan, if any"
+        />
       </label>
       <label style={{ ...cell, gridColumn: "1 / -1" }}>
         Prepayment terms (free text)

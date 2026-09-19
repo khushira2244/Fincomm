@@ -23,6 +23,7 @@ const CATEGORY = v.union(
   v.literal("expenses"),
   v.literal("obligations"),
   v.literal("assets"),
+  v.literal("insurancePolicies"),
 );
 
 const extractedShape = v.object({
@@ -30,7 +31,10 @@ const extractedShape = v.object({
   label: v.string(),
   amountMinorUnits: v.number(),
   // For obligations: the outstanding balance, when a document mentions
-  // both an EMI and a balance. Null otherwise.
+  // both an EMI and a balance. For insurancePolicies: the premium
+  // amount, when a coverage amount and a premium are both mentioned
+  // (amountMinorUnits carries the coverage amount in that case). Null
+  // otherwise.
   secondaryAmountMinorUnits: v.union(v.number(), v.null()),
   detail: v.string(),
 });
@@ -199,7 +203,7 @@ export const getMembershipForAction = internalQuery({
 // ---------------------------------------------------------------------
 
 type ExtractedFact = {
-  category: "incomeSources" | "expenses" | "obligations" | "assets";
+  category: "incomeSources" | "expenses" | "obligations" | "assets" | "insurancePolicies";
   label: string;
   amountMinorUnits: number;
   secondaryAmountMinorUnits: number | null;
@@ -208,7 +212,7 @@ type ExtractedFact = {
 
 const SYSTEM_PROMPT = `You extract structured financial facts from a document or email for a household finance app. Respond with ONLY a JSON object matching exactly this shape:
 {
-  "category": "incomeSources" | "expenses" | "obligations" | "assets",
+  "category": "incomeSources" | "expenses" | "obligations" | "assets" | "insurancePolicies",
   "label": string,
   "amountInRupees": number,
   "secondaryAmountInRupees": number | null,
@@ -221,10 +225,11 @@ Field meanings:
   - "expenses": money the household regularly spends (bills, groceries, subscriptions)
   - "obligations": loans, EMIs, or debts owed by the household
   - "assets": savings, investments, property, or anything of value the household owns
-- label: a short human-readable label, e.g. "Personal loan" or "Freelance payment".
-- amountInRupees: the primary amount, in whole rupees, as a plain integer (no currency symbols, no commas). IMPORTANT: use the number exactly as it appears for the rupee amount — do NOT convert it to paise, cents, or any other minor currency unit, and do NOT multiply it by 100. If a document says "Rs 45,000", the value is 45000, not 4500000. For an obligation, use the EMI amount here if both an EMI and a balance are mentioned.
-- secondaryAmountInRupees: for an obligation, the outstanding balance in whole rupees if separately mentioned; otherwise null. Same rule: do not convert to a minor unit.
-- detail: one short sentence with any other relevant detail mentioned (cadence such as monthly/weekly/annual/one-off, due date, liquidity, lender name, etc). Empty string if nothing else is mentioned.
+  - "insurancePolicies": an insurance policy document or renewal notice (life, health, motor, property, personal accident, or other insurance) — NOT a loan, even if the loan bundles insurance
+- label: a short human-readable label, e.g. "Personal loan" or "Freelance payment". For insurancePolicies, use the policy type and insurer if known, e.g. "Health insurance — Star Health".
+- amountInRupees: the primary amount, in whole rupees, as a plain integer (no currency symbols, no commas). IMPORTANT: use the number exactly as it appears for the rupee amount — do NOT convert it to paise, cents, or any other minor currency unit, and do NOT multiply it by 100. If a document says "Rs 45,000", the value is 45000, not 4500000. For an obligation, use the EMI amount here if both an EMI and a balance are mentioned. For insurancePolicies, use the coverage/sum-assured amount here.
+- secondaryAmountInRupees: for an obligation, the outstanding balance in whole rupees if separately mentioned. For insurancePolicies, the premium amount in whole rupees if separately mentioned. Otherwise null. Same rule: do not convert to a minor unit.
+- detail: one short sentence with any other relevant detail mentioned (cadence such as monthly/weekly/annual/one-off, due date, liquidity, lender/insurer name, policy number, premium frequency, etc). Empty string if nothing else is mentioned.
 
 Make your best reasonable guess for category and amount even if the document is ambiguous — never refuse or leave a field blank.`;
 
@@ -265,7 +270,7 @@ async function callOpenAi(content: unknown[]): Promise<ExtractedFact> {
     parsed = {};
   }
 
-  const validCategories = ["incomeSources", "expenses", "obligations", "assets"];
+  const validCategories = ["incomeSources", "expenses", "obligations", "assets", "insurancePolicies"];
   const category = validCategories.includes(parsed.category as string)
     ? (parsed.category as ExtractedFact["category"])
     : "expenses";

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import schema from "./schema";
 import { assertIntegerMinorUnits, bumpStateRevision, requireMembership } from "./access";
@@ -36,6 +36,55 @@ export const addObligation = mutation({
     });
     await bumpStateRevision(ctx, membership.householdId);
     return id;
+  },
+});
+
+// Basic-field edit (label/balance/EMI) — same "correct a mistake" need
+// as every other Financial Foundation table. Loan & Debt's own
+// updateLoanDetails (in convex/loanDebt.ts) still owns the extended
+// fields (rate, tenure, rate type, etc.) — this doesn't duplicate or
+// touch those.
+export const updateObligation = mutation({
+  args: {
+    obligationId: v.id("obligations"),
+    label: v.string(),
+    balanceMinorUnits: v.number(), // MUST be an integer — enforced below
+    emiMinorUnits: v.number(), // MUST be an integer — enforced below
+    currency: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertIntegerMinorUnits(args.balanceMinorUnits, "balanceMinorUnits");
+    assertIntegerMinorUnits(args.emiMinorUnits, "emiMinorUnits");
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("obligations", args.obligationId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Obligation not found.");
+    }
+    await ctx.db.patch(args.obligationId, {
+      label: args.label,
+      balanceMinorUnits: args.balanceMinorUnits,
+      emiMinorUnits: args.emiMinorUnits,
+      currency: args.currency,
+      updatedAt: Date.now(),
+    });
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const deleteObligation = mutation({
+  args: { obligationId: v.id("obligations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("obligations", args.obligationId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Obligation not found.");
+    }
+    await ctx.db.delete(args.obligationId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
   },
 });
 
