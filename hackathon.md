@@ -1822,6 +1822,17 @@ Firecrawl's section was also narrowed to name only the specific
 allowlisted pages actually scraped per feature, not "every government
 source," per the same standard already used throughout this log.
 
+### 2026-09-20 — README reordered to match a requested reading order
+Documentation only. Reordered `README.md`'s sections (no content cut) to
+Intro → Architecture → Why it matters → How FinComp is different →
+Service layer (connected service model, Document Intelligence, core
+design principle, sponsor tech, worked example) → Guide & docs →
+License, per explicit feedback that the architecture diagram should
+follow the intro directly, and everything service-specific (the model,
+the shared intelligence layer, sponsor tech, the walkthrough) should
+nest under one "Service layer" heading before the closing guide/license
+sections.
+
 ### 2026-09-19 — Real static hosting on *.convex.site, dev-verified
 Convex genuinely has no static-hosting product (re-confirmed directly
 against `docs.convex.dev/functions/http-actions`, which states HTTP

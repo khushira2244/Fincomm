@@ -19,7 +19,7 @@ context and lets specialist services react to the same confirmed change.
 
 Built for the Convex All Gas Hackathon.
 
-## Live demo
+### Live demo
 
 **[https://quixotic-dalmatian-305.convex.site](https://quixotic-dalmatian-305.convex.site)**
 
@@ -31,7 +31,32 @@ been reconfirmed since the production push — until that's verified, the
 AI-extraction, sourced-data, and email features may not fully work on
 the *live* URL even though every one of them is proven working on dev.
 
-## Why I built it
+## Architecture
+
+```mermaid
+flowchart TD
+    UI["React + Vite frontend"] -->|"Convex client\nreal-time queries/mutations over WebSocket"| QM
+
+    subgraph Convex["Convex backend"]
+        QM["Queries & Mutations"]
+        ACT["Actions"]
+        HTTP["HTTP Actions"]
+    end
+
+    QM --> LOGIC["Deterministic per-service logic\nEMI · runway · affordability\ntax slabs · coverage gaps\n(plain TypeScript, no AI in the math)"]
+
+    ACT -->|"narrates a finished result,\nor extracts fields from free text\n— never computes a figure"| AI["OpenAI (gpt-4o)"]
+    ACT -->|"scrapes a real allowlisted source,\ncached in sourceRegistry"| FC["Firecrawl"]
+    FC --> SRC[("RBI · IRDAI\nIncome Tax Dept · MSME schemes")]
+
+    HTTP -->|"inbound webhook\n(email → extraction → pending fact)"| AM["AgentMail"]
+    HTTP -->|"outbound sends\n(alerts, on-demand summaries)"| AM
+
+    HTTP -->|"serves built frontend"| FS[("Convex File Storage")]
+    FS --> SITE["FinComp served on *.convex.site\n(no native Convex static hosting —\nsee convex/staticSite.ts, convex/http.ts,\nscripts/deploy-static-site.mjs)"]
+```
+
+## Why it matters
 
 A household's financial decisions do not happen separately.
 
@@ -67,7 +92,9 @@ household's runway, flag debt pressure, identify affected goals, reduce
 safe investment capacity, and surface the need for a recovery or
 side-income plan — see [a full walkthrough below](#example-when-income-stops).
 
-## The connected service model
+## Service layer
+
+### The connected service model
 
 Every service below is **built and verified** against the real dev
 deployment — not a mockup or a roadmap item. Each links to its own doc:
@@ -97,7 +124,7 @@ insurance). Extracted information never changes the household's real
 financial state until the user reviews and confirms it — see
 `convex/documentIntelligence.ts` / `convex/extractedFacts.ts`.
 
-## Core design principle
+### Core design principle
 
 **Every calculation is deterministic. AI only narrates, extracts, and
 explains — it never invents a number, a rate, or financial advice.**
@@ -109,9 +136,9 @@ into plain language, or pulls structured fields out of unstructured text
 (a document, an email, a free-text description) — it is never the thing
 deciding what the numbers are.
 
-## Sponsor technology, through real workflows
+### Sponsor technology, through real workflows
 
-### Convex: the reactive household state
+#### Convex: the reactive household state
 
 Convex is the operating backbone of FinComp — not only a database.
 
@@ -129,7 +156,7 @@ Storage implementation (`convex/staticSite.ts`, `convex/http.ts`) —
 Convex has no built-in static-hosting product, so this closes that gap
 from real primitives instead.
 
-### Firecrawl: current evidence, not model memory
+#### Firecrawl: current evidence, not model memory
 
 Financial rules and public information change over time. Firecrawl
 retrieves information from allowlisted, feature-specific pages —
@@ -147,7 +174,7 @@ the real scraped text deterministically — regex/table parsing, never
 AI — and shown as labelled context, never silently substituted into a
 calculation.
 
-### AgentMail: financial information through email
+#### AgentMail: financial information through email
 
 A user can forward a bill, statement, or financial document to the
 FinComp inbox. AgentMail delivers the email through a signed webhook;
@@ -165,7 +192,7 @@ checking the app. Verified with real outbound sends — confirmed via a
 live Amazon SES message ID and a "sent" delivery status read back from
 AgentMail, not assumed from the enqueue call.
 
-### OpenAI: interpretation without control of the numbers
+#### OpenAI: interpretation without control of the numbers
 
 OpenAI extracts structured candidate facts from documents and free text,
 and turns completed calculations into understandable explanations.
@@ -175,7 +202,7 @@ coverage gaps, or financial thresholds. Those values come from
 deterministic TypeScript functions. AI-derived facts remain pending
 until a human confirms them.
 
-## Example: when income stops
+### Example: when income stops
 
 1. The household records that a dependable income source has stopped.
 2. Convex updates the household state and revision.
@@ -190,32 +217,9 @@ until a human confirms them.
 This is why FinComp needs to be one connected household context, not
 nine unrelated tabs.
 
-## Architecture flow
+## Guide & docs
 
-```mermaid
-flowchart TD
-    UI["React + Vite frontend"] -->|"Convex client\nreal-time queries/mutations over WebSocket"| QM
-
-    subgraph Convex["Convex backend"]
-        QM["Queries & Mutations"]
-        ACT["Actions"]
-        HTTP["HTTP Actions"]
-    end
-
-    QM --> LOGIC["Deterministic per-service logic\nEMI · runway · affordability\ntax slabs · coverage gaps\n(plain TypeScript, no AI in the math)"]
-
-    ACT -->|"narrates a finished result,\nor extracts fields from free text\n— never computes a figure"| AI["OpenAI (gpt-4o)"]
-    ACT -->|"scrapes a real allowlisted source,\ncached in sourceRegistry"| FC["Firecrawl"]
-    FC --> SRC[("RBI · IRDAI\nIncome Tax Dept · MSME schemes")]
-
-    HTTP -->|"inbound webhook\n(email → extraction → pending fact)"| AM["AgentMail"]
-    HTTP -->|"outbound sends\n(alerts, on-demand summaries)"| AM
-
-    HTTP -->|"serves built frontend"| FS[("Convex File Storage")]
-    FS --> SITE["FinComp served on *.convex.site\n(no native Convex static hosting —\nsee convex/staticSite.ts, convex/http.ts,\nscripts/deploy-static-site.mjs)"]
-```
-
-## Running locally
+### Running locally
 
 ```
 npm install
@@ -223,7 +227,7 @@ npx convex dev
 npm run dev
 ```
 
-## Full build log
+### Full build log
 
 The complete, evidence-based development history — every service, every
 verification pass, every bug found and fixed, in chronological order —
