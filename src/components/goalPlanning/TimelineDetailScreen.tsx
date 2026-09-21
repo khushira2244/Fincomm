@@ -558,17 +558,33 @@ function CareerSection({
   const addCareer = useMutation(api.goalPlanning.addCareerGoal);
   const role = useDraft(k("role"));
   const income = useDraft(k("income"));
+  const [error, setError] = useState<string | null>(null);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    setError(null);
+    // Expected income is a plain-language rupee figure ("Expected
+    // income"), so people naturally type it with commas or a ₹ prefix
+    // (e.g. "15,00,000") — strip everything but digits/minus before
+    // parsing so that still works, instead of silently producing NaN.
+    const cleanedIncome = income.value.replace(/[^0-9.-]/g, "");
+    const parsedIncome = cleanedIncome === "" ? undefined : Number(cleanedIncome);
+    if (parsedIncome !== undefined && !Number.isInteger(parsedIncome)) {
+      setError("Expected income must be a whole number of rupees (no decimals).");
+      return;
+    }
     void addCareer({
       timelineId,
       description: role.value,
-      expectedIncomeMinorUnits: income.value ? Number(income.value) : undefined,
-    }).then(() => {
-      role.clear();
-      income.clear();
-    });
+      expectedIncomeMinorUnits: parsedIncome,
+    })
+      .then(() => {
+        role.clear();
+        income.clear();
+      })
+      .catch((err: Error) => {
+        setError(err.message);
+      });
   };
 
   return (
@@ -603,6 +619,7 @@ function CareerSection({
           Add
         </button>
       </form>
+      {error && <p style={{ fontSize: "13px", color: "#a13d3d", margin: "8px 0 0" }}>{error}</p>}
       <span style={linkStyle}>→ Go deeper in Economic &amp; Role-Change Intelligence</span>
     </CollapsibleSection>
   );
