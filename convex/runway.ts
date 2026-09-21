@@ -128,7 +128,7 @@ export const calculateRunway = query({
       return {
         status: "not_depleting" as const,
         runwayMonths: null,
-        message: "reserves are not being depleted",
+        message: "holding steady — income covers what goes out",
         monthlyNetGapMinorUnits,
         unrestrictedLiquidSavingsMinorUnits,
         essentialMonthlyExpensesMinorUnits,

@@ -1,0 +1,231 @@
+erDiagram
+    OWNERS ||--o{ VEHICLES : owns
+    VEHICLES ||--o{ REPAIR_CASES : "has cases"
+    GARAGES ||--o{ MECHANICS : employs
+    GARAGES ||--o{ REPAIR_CASES : hosts
+    MECHANICS ||--o{ REPAIR_CASES : handles
+
+    REPAIR_CASES ||--o{ MEDIA_ASSETS : contains
+    REPAIR_CASES ||--o{ MECHANIC_CLAIMS : has
+    REPAIR_CASES ||--o{ REPAIR_PROPOSALS : has
+    REPAIR_CASES ||--o{ PURCHASED_PARTS : has
+    REPAIR_CASES ||--o{ FITTED_PARTS : has
+    REPAIR_CASES ||--o{ EVIDENCE_REQUESTS : has
+    REPAIR_CASES ||--o{ AGENT_RUNS : triggers
+    REPAIR_CASES ||--o{ PRE_SERVICE_REASONING_RESULTS : has
+    REPAIR_CASES ||--o{ FINAL_REPAIR_REPORTS : has
+    REPAIR_CASES ||--o{ OWNER_DECISIONS : has
+    REPAIR_CASES ||--o{ AUDIT_TIMELINE : logs
+    REPAIR_CASES ||--o{ VISION_ANALYSIS_RUNS : has
+    REPAIR_CASES ||--o{ SERVICE_HISTORY_ENTRIES : summarizes
+
+    MECHANIC_CLAIMS ||--o{ REPAIR_PROPOSALS : justifies
+    MECHANIC_CLAIMS ||--o{ PRE_SERVICE_REASONING_RESULTS : "reasoned about"
+
+    REPAIR_PROPOSALS ||--o{ PROPOSED_PARTS : lists
+    PROPOSED_PARTS ||--o{ PURCHASED_PARTS : "fulfilled by"
+    PURCHASED_PARTS ||--|| FITTED_PARTS : "fitted as"
+
+    MEDIA_ASSETS }o--o{ VISION_ANALYSIS_RUNS : "input via VISION_RUN_INPUTS"
+    VISION_ANALYSIS_RUNS ||--o{ VISION_FINDINGS : produces
+    VISION_FINDINGS ||--o{ EVIDENCE_REQUESTS : "can trigger"
+    VISION_FINDINGS ||--o{ AGENT_STEPS : "causes (caused_by_finding_id)"
+
+    AGENT_RUNS ||--o{ AGENT_STEPS : "ordered steps"
+    AGENT_STEPS ||--o| PRE_SERVICE_REASONING_RESULTS : produces
+    AGENT_STEPS ||--o| FINAL_REPAIR_REPORTS : produces
+
+    PRE_SERVICE_REASONING_RESULTS ||--o{ OWNER_DECISIONS : informs
+    FINAL_REPAIR_REPORTS ||--o{ OWNER_DECISIONS : informs
+    OWNERS ||--o{ OWNER_DECISIONS : makes
+    OWNER_DECISIONS ||--o| SECOND_OPINIONS : requests
+
+    VEHICLES ||--o{ VEHICLE_MEMORY : "derived from"
+    VEHICLES ||--o{ SERVICE_HISTORY_ENTRIES : has
+
+    EVALUATION_CLIPS ||--o{ EVALUATION_RUNS : "evaluated in"
+    VISION_ANALYSIS_RUNS ||--o{ EVALUATION_RUNS : "optionally scored by"
+
+    OWNERS {
+        uuid id PK
+        text full_name
+        text email
+        text phone
+    }
+    VEHICLES {
+        uuid id PK
+        uuid owner_id FK
+        enum vehicle_type
+        text make
+        text model
+        text registration_number
+    }
+    GARAGES {
+        uuid id PK
+        text name
+    }
+    MECHANICS {
+        uuid id PK
+        uuid garage_id FK
+        text full_name
+    }
+    REPAIR_CASES {
+        uuid id PK
+        uuid vehicle_id FK
+        uuid garage_id FK
+        uuid mechanic_id FK
+        enum state
+        timestamptz opened_at
+        timestamptz closed_at
+    }
+    MEDIA_ASSETS {
+        uuid id PK
+        uuid case_id FK
+        enum stage
+        enum media_type
+        text s3_key
+        text perceptual_hash
+        bool challenge_marker_detected
+    }
+    MECHANIC_CLAIMS {
+        uuid id PK
+        uuid case_id FK
+        text component_claimed
+        text claim_description
+    }
+    REPAIR_PROPOSALS {
+        uuid id PK
+        uuid case_id FK
+        uuid claim_id FK
+        numeric estimated_price
+        bool is_supplemental
+    }
+    PROPOSED_PARTS {
+        uuid id PK
+        uuid proposal_id FK
+        text part_name
+        text part_number
+        enum source
+    }
+    PURCHASED_PARTS {
+        uuid id PK
+        uuid case_id FK
+        uuid proposed_part_id FK
+        text brand
+        text part_number
+        numeric purchase_price
+    }
+    FITTED_PARTS {
+        uuid id PK
+        uuid purchased_part_id FK
+        uuid case_id FK
+        timestamptz fitted_at
+    }
+    VISION_ANALYSIS_RUNS {
+        uuid id PK
+        uuid case_id FK
+        enum module
+        enum status
+        text model_version
+        text opencv_version
+    }
+    VISION_RUN_INPUTS {
+        uuid id PK
+        uuid run_id FK
+        uuid media_asset_id FK
+        text role
+    }
+    VISION_FINDINGS {
+        uuid id PK
+        uuid run_id FK
+        uuid case_id FK
+        enum module
+        enum result_label
+        numeric confidence
+        numeric primary_metric
+        jsonb measurements
+    }
+    EVIDENCE_REQUESTS {
+        uuid id PK
+        uuid case_id FK
+        enum source
+        enum status
+        uuid triggered_by_finding_id FK
+    }
+    AGENT_RUNS {
+        uuid id PK
+        uuid case_id FK
+        text trigger_event
+        enum status
+    }
+    AGENT_STEPS {
+        uuid id PK
+        uuid agent_run_id FK
+        int step_order
+        enum step_type
+        text tool_name
+        jsonb inputs
+        jsonb outputs
+        uuid caused_by_finding_id FK
+        enum status
+    }
+    PRE_SERVICE_REASONING_RESULTS {
+        uuid id PK
+        uuid case_id FK
+        uuid claim_id FK
+        uuid agent_step_id FK
+        enum result
+        numeric confidence
+    }
+    FINAL_REPAIR_REPORTS {
+        uuid id PK
+        uuid case_id FK
+        uuid agent_step_id FK
+        jsonb discrepancies
+    }
+    OWNER_DECISIONS {
+        uuid id PK
+        uuid case_id FK
+        uuid owner_id FK
+        enum pre_service_decision
+        enum final_decision
+    }
+    SECOND_OPINIONS {
+        uuid id PK
+        uuid case_id FK
+        text expert_name
+        enum status
+    }
+    SERVICE_HISTORY_ENTRIES {
+        uuid id PK
+        uuid vehicle_id FK
+        uuid case_id FK
+        date service_date
+    }
+    VEHICLE_MEMORY {
+        uuid id PK
+        uuid vehicle_id FK
+        text observation_type
+        text component
+        int occurrence_count
+    }
+    AUDIT_TIMELINE {
+        uuid id PK
+        uuid case_id FK
+        text event_type
+        enum actor_type
+        timestamptz occurred_at
+    }
+    EVALUATION_CLIPS {
+        uuid id PK
+        enum module
+        jsonb ground_truth
+    }
+    EVALUATION_RUNS {
+        uuid id PK
+        uuid evaluation_clip_id FK
+        uuid vision_run_id FK
+        text metric_name
+        numeric metric_value
+        bool agent_decision_correct
+    }

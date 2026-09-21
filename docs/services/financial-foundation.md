@@ -23,8 +23,8 @@ runway (months) = liquid savings ÷ (essential expenses + EMI − dependable inc
 Weekly and annual cadences are normalized to a monthly equivalent
 (×52/12, ÷12) before summing; irregular income and one-off expenses are
 excluded, since neither has a steady monthly figure. If the gap is zero
-or negative, the app reports "reserves are not being depleted" instead of
-dividing by zero.
+or negative, the app reports "holding steady — income covers what goes
+out" instead of dividing by zero.
 
 Obligation entry deliberately asks for two plain-language numbers —
 **total amount still owed** and **what you pay monthly** — rather than

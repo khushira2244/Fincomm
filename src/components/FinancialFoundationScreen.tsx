@@ -97,7 +97,7 @@ function RunwayCard() {
         Household runway
       </div>
       <div style={{ fontFamily: fontSerif, fontSize: "32px", fontWeight: 700, color: colors.deepGreen, marginBottom: "20px" }}>
-        {runway === undefined ? "calculating..." : runway.status === "not_depleting" ? "reserves are not being depleted" : `${runway.runwayMonths.toFixed(1)} months`}
+        {runway === undefined ? "calculating..." : runway.status === "not_depleting" ? "holding steady — income covers what goes out" : `${runway.runwayMonths.toFixed(1)} months`}
       </div>
       {runway !== undefined && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "32px" }}>
