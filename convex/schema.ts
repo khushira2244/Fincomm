@@ -1102,6 +1102,11 @@ export default defineSchema({
       v.literal("sectorRisk"),
       v.literal("scheme"),
       v.literal("regulatory"),
+      // A one-time "here's the current picture" assessment generated
+      // immediately on a household's first save for a given sector/
+      // business type — distinct from the other types above, which only
+      // ever fire on a detected CHANGE from a prior baseline.
+      v.literal("initialAssessment"),
     ),
     // Deterministic per-findingType threshold — see governmentEconomic.ts.
     severity: v.union(v.literal("notable"), v.literal("significant")),

@@ -103,6 +103,7 @@ function JobTrackPanel({ onOpenFinding }: { onOpenFinding: (id: Id<"economicFind
   const [text, setText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const draft = text ?? jobProfile?.freeTextDescription ?? (jobProfile === null && prefill ? prefill.freeTextDescription : "") ?? "";
   const showPrefillNotice = jobProfile === null && prefill !== null && prefill !== undefined && text === null;
@@ -110,11 +111,16 @@ function JobTrackPanel({ onOpenFinding }: { onOpenFinding: (id: Id<"economicFind
   const submit = () => {
     setBusy(true);
     setError(null);
+    setSaved(false);
     void save({
       track: "job",
       freeTextDescription: draft,
       source: showPrefillNotice ? "prefilledFromIncomeSource" : "userProvided",
     })
+      .then(() => {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 4000);
+      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusy(false));
   };
@@ -144,6 +150,7 @@ function JobTrackPanel({ onOpenFinding }: { onOpenFinding: (id: Id<"economicFind
           <button style={primaryButtonStyle} disabled={busy || draft.trim() === ""} onClick={submit}>
             {busy ? "Checking…" : "Save & check for signals"}
           </button>
+          {saved && <span style={{ fontSize: "12px", color: colors.deepGreen, fontWeight: 600 }}>Saved ✓</span>}
           {error && <span style={{ fontSize: "12px", color: "#a13d3d" }}>{error}</span>}
         </div>
       </Card>
@@ -205,18 +212,24 @@ function BusinessCard({
   const [text, setText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const draft = text ?? profile?.freeTextDescription ?? "";
 
   const submit = () => {
     setBusy(true);
     setError(null);
+    setSaved(false);
     void save({
       track: "business",
       freeTextDescription: draft,
       source: profile ? "userProvided" : "prefilledFromSideIncome",
       sideIncomeEntryId: entryId,
     })
+      .then(() => {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 4000);
+      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusy(false));
   };
@@ -244,6 +257,7 @@ function BusinessCard({
           <button style={primaryButtonStyle} disabled={busy || draft.trim() === ""} onClick={submit}>
             {busy ? "Checking…" : "Save & check for signals"}
           </button>
+          {saved && <span style={{ fontSize: "12px", color: colors.deepGreen, fontWeight: 600 }}>Saved ✓</span>}
           {error && <span style={{ fontSize: "12px", color: "#a13d3d" }}>{error}</span>}
         </div>
       </Card>
@@ -367,6 +381,7 @@ const FINDING_TYPE_LABEL: Record<string, string> = {
   sectorRisk: "Sector risk signal",
   scheme: "Scheme signal",
   regulatory: "Regulatory signal",
+  initialAssessment: "Current picture",
 };
 
 function FindingDetail({ findingId, onBack }: { findingId: Id<"economicFindings">; onBack: () => void }) {

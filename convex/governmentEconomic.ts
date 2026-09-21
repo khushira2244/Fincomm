@@ -257,13 +257,45 @@ export const saveLivelihoodProfileAndCheck = action({
       ...extracted,
     })) as Id<"livelihoodProfiles">;
 
-    // Immediately trigger a fresh check — don't wait for the next cron
-    // tick. Runs the whole household's monitoring (all tracks/profiles),
-    // not just this one save — cheap (a handful of scrapes/searches) and
-    // simpler than threading a track-scoped path through the same
-    // orchestrator the cron already uses; each signal only ever creates
-    // a finding on genuine change, so re-running unrelated signals here
-    // is a no-op for them, not noise.
+    // Immediate initial assessment — a real, honest answer to "what's
+    // happening right now", not just a silent monitoring baseline. Gated
+    // on whether a baseline already exists for this EXACT sector/business
+    // type (not on whether the profile row itself is new), so a vague
+    // first save with no sector yet still gets a real assessment once the
+    // sector becomes known on a later save, and a genuine sector/business
+    // -type change later gets its own fresh assessment too. Runs BEFORE
+    // the ongoing monitoring check below so it establishes the real
+    // baseline that check compares against, instead of racing it.
+    if (args.track === "job") {
+      const sector = (extracted as { interpretedSector: string | null }).interpretedSector;
+      if (sector) {
+        const existingBaseline = await ctx.runQuery(internal.governmentEconomic.getMonitoringStateInternal, {
+          householdId,
+          track: "job",
+          signalType: `sectorRisk:${sector.toLowerCase()}`,
+        });
+        if (existingBaseline === null) await checkInitialJobAssessment(ctx, householdId, sector);
+      }
+    } else if (args.sideIncomeEntryId) {
+      const businessType = (extracted as { interpretedBusinessType: string | null }).interpretedBusinessType;
+      if (businessType) {
+        const existingBaseline = await ctx.runQuery(internal.governmentEconomic.getMonitoringStateInternal, {
+          householdId,
+          track: "business",
+          signalType: `scheme:${args.sideIncomeEntryId}:${businessType.toLowerCase()}`,
+        });
+        if (existingBaseline === null) await checkInitialBusinessAssessment(ctx, householdId, args.sideIncomeEntryId, businessType);
+      }
+    }
+
+    // Immediately trigger a fresh ongoing-monitoring check too — don't
+    // wait for the next cron tick. Runs the whole household's monitoring
+    // (all tracks/profiles), not just this one save — cheap (a handful of
+    // scrapes/searches) and simpler than threading a track-scoped path
+    // through the same orchestrator the cron already uses; each signal
+    // only ever creates a finding on genuine CHANGE from a baseline, so
+    // running it right after the initial assessment above (which just set
+    // that baseline) correctly produces no duplicate finding.
     await ctx.runAction(internal.governmentEconomic.runHouseholdMonitoringCheckInternal, { householdId });
 
     const profile = await ctx.runQuery(internal.governmentEconomic.getProfileByIdInternal, { profileId });
@@ -445,7 +477,7 @@ export const createFindingInternal = internalMutation({
   args: {
     householdId: v.id("households"),
     track: v.union(v.literal("job"), v.literal("business")),
-    findingType: v.union(v.literal("interestRate"), v.literal("sectorRisk"), v.literal("scheme"), v.literal("regulatory")),
+    findingType: v.union(v.literal("interestRate"), v.literal("sectorRisk"), v.literal("scheme"), v.literal("regulatory"), v.literal("initialAssessment")),
     severity: v.union(v.literal("notable"), v.literal("significant")),
     title: v.string(),
     headline: v.string(),
@@ -473,6 +505,160 @@ async function narrateFinding(
     plainLanguage: typeof parsed.plainLanguage === "string" ? parsed.plainLanguage : detail,
     caveats: Array.isArray(parsed.caveats) ? parsed.caveats.filter((c): c is string => typeof c === "string") : [],
   };
+}
+
+async function narrateInitialAssessment(
+  track: "job" | "business",
+  subject: string,
+  snippets: string,
+  level: "hard" | "cautionary" | "none",
+): Promise<{ headline: string; plainLanguage: string; caveats: string[] }> {
+  const system = `You are writing a household's FIRST, one-time "here's the current picture" assessment for ${
+    track === "job" ? `their sector ("${subject}")` : `their business type ("${subject}")`
+  } — generated the moment they set this up, not a "something changed" alert. You are given real, recent web search snippets and a deterministic signal level ("hard" | "cautionary" | "none" — already decided by separate keyword logic from the snippets, never yours to change). Return ONLY JSON: { "headline": string, "plainLanguage": string, "caveats": string[] }. If the level is "none" or the snippets are empty, say plainly that no major signals were found right now — do not invent risk, opportunity, or investment activity that isn't in the snippets. NEVER invent a rate, figure, date, deadline, scheme name, or investment amount not present in the given snippets. NEVER tell the household what to do — describe the current picture and point them to verify with the actual source or a professional if it matters to a decision. NEVER state a specific date, year, deadline, or cutoff not explicitly present in the snippets.`;
+  const parsed = await chatJson(system, JSON.stringify({ track, subject, level, snippets: snippets || "No search results found." }));
+  return {
+    headline: typeof parsed.headline === "string" && parsed.headline ? parsed.headline : `Current picture for ${subject}`,
+    plainLanguage: typeof parsed.plainLanguage === "string" ? parsed.plainLanguage : (snippets ? "See details below." : "No major signals found right now."),
+    caveats: Array.isArray(parsed.caveats) ? parsed.caveats.filter((c): c is string => typeof c === "string") : [],
+  };
+}
+
+// ---- Initial assessment (job track): a real, immediate answer to "what's
+// happening in my sector right now" — generated once, the first time a
+// household has a usable sector for this track, not on every save. Uses
+// the SAME query keywords (and the same deterministic classifySectorSignal)
+// as the ongoing sector-risk monitor below, plus "government investment" to
+// also cover that angle in the one search — deliberately kept close to that
+// query's wording (not a separately-phrased one) so the baseline this seeds
+// stays consistent with what that check will independently re-derive
+// moments later in the same save, rather than the two searches surfacing
+// different content because they were phrased differently. Then narrates
+// directly against the question this screen poses (a "current picture",
+// not a "this changed" alert), and seeds the ongoing monitor's baseline
+// with the level it found — so the next daily check compares against this
+// real observation instead of treating a later read as the first-ever
+// baseline and firing a false "increase".
+async function checkInitialJobAssessment(
+  ctx: { runQuery: Function; runMutation: Function },
+  householdId: Id<"households">,
+  sector: string,
+): Promise<Id<"economicFindings"> | null> {
+  const queryText = `${sector} sector India government investment hiring layoffs job market outlook ${new Date().getFullYear()}`;
+  let items: Array<{ title?: string; description?: string; url?: string }> = [];
+  try {
+    const results = await firecrawl.search(ctx as never, queryText, { limit: 5, sources: ["web"] });
+    items = (results.web ?? []) as never;
+  } catch {
+    return null; // couldn't retrieve real signals — say nothing rather than invent
+  }
+  const snippets = items.map((it) => `${it.title ?? ""}: ${it.description ?? ""}`).join("\n").slice(0, 3000);
+  const level = classifySectorSignal(snippets);
+
+  const sourceId = (await ctx.runMutation(internal.governmentEconomic.ensureSourceInternal, {
+    url: `firecrawl-search:${queryText}`,
+    label: `Web search: ${sector} sector outlook`,
+    authorityLevel: "web-search-aggregate",
+  })) as Id<"sourceRegistry">;
+  const snapshotId = (await ctx.runMutation(internal.governmentEconomic.saveSnapshotInternal, {
+    sourceId,
+    contentSummary: snippets || "No results found.",
+  })) as Id<"sourceSnapshots">;
+
+  // Seed the ongoing sector-risk monitor's baseline with this real,
+  // just-observed level — see comment above the function.
+  await ctx.runMutation(internal.governmentEconomic.saveMonitoringStateInternal, {
+    householdId,
+    track: "job",
+    signalType: `sectorRisk:${sector.toLowerCase()}`,
+    lastKnownValue: level,
+  });
+
+  const severity: "notable" | "significant" = level === "hard" ? "significant" : "notable";
+  const headline =
+    items.length === 0
+      ? `No major signals found right now for the ${sector} sector`
+      : level === "hard"
+        ? `Active hiring/workforce signals found right now in the ${sector} sector`
+        : level === "cautionary"
+          ? `Some cautionary signals found right now in the ${sector} sector`
+          : `No major hiring or investment risk signals found right now in the ${sector} sector`;
+  const narration = await narrateInitialAssessment("job", sector, snippets, level);
+  return (await ctx.runMutation(internal.governmentEconomic.createFindingInternal, {
+    householdId,
+    track: "job",
+    findingType: "initialAssessment",
+    severity,
+    title: `Current picture: ${sector}`,
+    headline,
+    body: snippets || "No relevant recent coverage found for this sector.",
+    affectsService: "financialFoundation",
+    narration,
+    sourceSnapshotId: snapshotId,
+  })) as Id<"economicFindings">;
+}
+
+// ---- Initial assessment (business track): a real, immediate answer to
+// "what government schemes exist for this business type right now" —
+// generated once per business, the first time it gets a usable business
+// type. Reuses checkSchemeSignal's exact search pattern, then narrates
+// directly, and seeds the ongoing scheme monitor's baseline with the
+// scheme names seen here so tomorrow's check only fires on a genuinely
+// NEW scheme, not one already surfaced in this initial assessment.
+async function checkInitialBusinessAssessment(
+  ctx: { runQuery: Function; runMutation: Function },
+  householdId: Id<"households">,
+  entryId: Id<"sideIncomeEntries">,
+  businessType: string,
+): Promise<Id<"economicFindings"> | null> {
+  const queryText = `government scheme subsidy loan for ${businessType} small business India ${new Date().getFullYear()}`;
+  let items: Array<{ title?: string; description?: string; url?: string }> = [];
+  try {
+    const results = await firecrawl.search(ctx as never, queryText, { limit: 6, sources: ["web"] });
+    items = (results.web ?? []) as never;
+  } catch {
+    return null;
+  }
+  const names = items.map((it) => (it.title ?? "").trim()).filter((t) => t.length > 0);
+  const snippets = items.map((it) => `${it.title ?? ""}: ${it.description ?? ""}`).join("\n").slice(0, 3000);
+
+  const sourceId = (await ctx.runMutation(internal.governmentEconomic.ensureSourceInternal, {
+    url: `firecrawl-search:${queryText}`,
+    label: `Web search: government schemes for ${businessType}`,
+    authorityLevel: "web-search-aggregate",
+  })) as Id<"sourceRegistry">;
+  const snapshotId = (await ctx.runMutation(internal.governmentEconomic.saveSnapshotInternal, {
+    sourceId,
+    contentSummary: snippets || "No results found.",
+  })) as Id<"sourceSnapshots">;
+
+  // Seed the ongoing scheme monitor's baseline — see comment above the function.
+  await ctx.runMutation(internal.governmentEconomic.saveMonitoringStateInternal, {
+    householdId,
+    track: "business",
+    signalType: `scheme:${entryId}:${businessType.toLowerCase()}`,
+    lastKnownValue: names.slice(0, 50),
+  });
+
+  const headline =
+    names.length > 0
+      ? `${names.length} possible government scheme${names.length === 1 ? "" : "s"} found right now for ${businessType}`
+      : `No open government schemes found right now for ${businessType}`;
+  const narration = await narrateInitialAssessment("business", businessType, snippets, names.length > 0 ? "cautionary" : "none");
+  return (await ctx.runMutation(internal.governmentEconomic.createFindingInternal, {
+    householdId,
+    track: "business",
+    findingType: "initialAssessment",
+    severity: "notable",
+    title: `Current picture: ${businessType}`,
+    headline,
+    steps: names.length > 0 ? [`Verify eligibility conditions directly on each scheme's own page before relying on this.`] : undefined,
+    body: snippets || "No relevant scheme coverage found for this business type.",
+    affectsService: "sideIncome",
+    affectsEntityId: entryId,
+    narration,
+    sourceSnapshotId: snapshotId,
+  })) as Id<"economicFindings">;
 }
 
 // ---- Interest rate signal (job: gated on a floating-rate loan; business: always for active businesses) ----
