@@ -156,20 +156,14 @@ export function AuthScreen() {
       </div>
 
       <div style={{ maxWidth: "980px", margin: "0 auto", padding: "16px 24px 64px" }}>
-        <div
-          style={{
-            fontFamily: "monospace",
-            fontSize: "11px",
-            letterSpacing: "0.08em",
-            color: colors.midGreen,
-            marginBottom: "10px",
-          }}
-        >
-          [ 01 / 04 ] · HOW FINCOMP WORKS
-        </div>
-        <h2 style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "24px", margin: "0 0 32px", color: colors.ink }}>
+        <h2 style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "24px", margin: "0 0 12px", color: colors.ink }}>
           One record, checked four ways.
         </h2>
+        <p style={{ fontSize: "14px", color: colors.inkSoft, lineHeight: 1.6, maxWidth: "620px", margin: "0 0 32px" }}>
+          Every household starts as one shared record. Describe what changed, and FinComp turns it
+          into real numbers, then lets every connected service react to the same confirmed fact —
+          instead of re-entering the same information into nine separate tools.
+        </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) minmax(280px, 1.1fr)", gap: "40px", alignItems: "start" }} className="max-md:!grid-cols-1">
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
