@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
@@ -122,6 +122,19 @@ function AuthenticatedApp() {
     }
   }, [route]);
 
+  // Remember whichever Goal & Situation Planning sub-screen (overview,
+  // or a specific timeline's detail view) was last shown, so navigating
+  // to a different service and back via the sidebar resumes it instead
+  // of unconditionally resetting to the bare overview every time.
+  const lastGoalPlanningRoute = useRef<Route>(
+    route.name === "goalPlanningOverview" || route.name === "goalPlanningDetail" || route.name === "planAnalysis"
+      ? route
+      : { name: "goalPlanningOverview" },
+  );
+  if (route.name === "goalPlanningOverview" || route.name === "goalPlanningDetail" || route.name === "planAnalysis") {
+    lastGoalPlanningRoute.current = route;
+  }
+
   if (mine === undefined) {
     return (
       <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
@@ -169,7 +182,10 @@ function AuthenticatedApp() {
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <Header />
       <div style={{ display: "flex", flex: 1 }}>
-      <Sidebar activeKey={activeKey} onNavigate={(key) => setRoute(serviceKeyToRoute(key))} />
+      <Sidebar
+        activeKey={activeKey}
+        onNavigate={(key) => setRoute(key === "goalPlanning" ? lastGoalPlanningRoute.current : serviceKeyToRoute(key))}
+      />
       {route.name === "financialFoundation" && <FinancialFoundationScreen />}
       {route.name === "loanDebt" && <LoanDebtScreen />}
       {route.name === "sideIncome" && <SideIncomeScreen />}
