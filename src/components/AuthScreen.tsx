@@ -45,6 +45,13 @@ const SERVICES: { title: string; description: string }[] = [
   { title: "Income Resilience", description: "The full picture — how exposed your household really is, and what to do about it." },
 ];
 
+const HOW_STEPS: { n: string; title: string; description: string }[] = [
+  { n: "01", title: "Describe", description: "Tell it what happened — in your own words. A lost income source, a new loan, a job change." },
+  { n: "02", title: "Extract", description: "AI pulls out the structured facts. It never invents a number — you confirm everything before it's real." },
+  { n: "03", title: "Compute", description: "Plain, deterministic TypeScript runs the actual math — runway, EMI, tax, affordability. No AI in the arithmetic." },
+  { n: "04", title: "Connect", description: "Every service that depends on this fact updates together — not nine separate tools that each need telling." },
+];
+
 const MECHANISM_CARDS: { name: string; eyebrow: string; description: string }[] = [
   { name: "Convex", eyebrow: "Backend & live state", description: "Every number you enter updates live, everywhere it's used — your runway, your loan checks, your plan." },
   { name: "Firecrawl", eyebrow: "Real, sourced data", description: "Actual RBI rates, IRDAI rules, and tax slabs — scraped, dated, and shown as context, not guessed." },
@@ -145,6 +152,136 @@ export function AuthScreen() {
               <div style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.45 }}>{s.description}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div style={{ maxWidth: "980px", margin: "0 auto", padding: "16px 24px 64px" }}>
+        <div
+          style={{
+            fontFamily: "monospace",
+            fontSize: "11px",
+            letterSpacing: "0.08em",
+            color: colors.midGreen,
+            marginBottom: "10px",
+          }}
+        >
+          [ 01 / 04 ] · HOW FINCOMP WORKS
+        </div>
+        <h2 style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "24px", margin: "0 0 32px", color: colors.ink }}>
+          One record, checked four ways.
+        </h2>
+
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) minmax(280px, 1.1fr)", gap: "40px", alignItems: "start" }} className="max-md:!grid-cols-1">
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            {HOW_STEPS.map((step) => (
+              <div key={step.n} style={{ display: "flex", gap: "16px" }}>
+                <div
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: colors.deepGreen,
+                    background: colors.creamDim,
+                    border: `1px solid ${colors.sageGreen}`,
+                    borderRadius: "6px",
+                    width: "30px",
+                    height: "30px",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {step.n}
+                </div>
+                <div>
+                  <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "15px", color: colors.ink, marginBottom: "3px" }}>{step.title}</div>
+                  <div style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.5 }}>{step.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              background: colors.deepGreen,
+              borderRadius: radius,
+              padding: "22px 24px",
+              boxShadow: "0 8px 24px rgba(31, 74, 58, 0.18)",
+            }}
+            className="hover:shadow-lg transition-shadow duration-300"
+          >
+            <div style={{ fontFamily: "monospace", fontSize: "10px", letterSpacing: "0.08em", color: colors.sageGreen, marginBottom: "6px" }}>
+              ONE HOUSEHOLD
+            </div>
+            <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "18px", color: colors.cream, marginBottom: "18px" }}>
+              Financial Foundation
+            </div>
+
+            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: colors.sageGreen, marginBottom: "10px" }}>
+              Computed deterministically
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "18px" }}>
+              {["Liquid savings", "Essential expenses", "Total EMI", "Dependable income"].map((field) => (
+                <div
+                  key={field}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "rgba(246, 241, 228, 0.08)",
+                    border: `1px solid ${colors.midGreen}`,
+                    borderRadius: "6px",
+                    padding: "8px 10px",
+                    fontSize: "12px",
+                    color: colors.cream,
+                  }}
+                >
+                  <span style={{ color: "#9ED6B5" }}>✓</span> {field}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: colors.sageGreen, marginBottom: "10px" }}>
+              Explained by AI
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "rgba(246, 241, 228, 0.08)",
+                border: `1px solid ${colors.midGreen}`,
+                borderRadius: "6px",
+                padding: "8px 10px",
+                fontSize: "12px",
+                color: colors.sageGreen,
+                marginBottom: "18px",
+              }}
+            >
+              🔒 Plain-language narration — never the number itself
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", borderTop: `1px solid ${colors.midGreen}`, paddingTop: "14px" }}>
+              {["Runway", "Deep dive", "Confirm"].map((action) => (
+                <div
+                  key={action}
+                  style={{
+                    flex: 1,
+                    textAlign: "center",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    color: colors.cream,
+                    border: `1px solid ${colors.midGreen}`,
+                    borderRadius: "6px",
+                    padding: "8px 4px",
+                  }}
+                >
+                  {action}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
