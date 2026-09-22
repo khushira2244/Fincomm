@@ -32,6 +32,17 @@ date, year, deadline, or cutoff — added after an early version invented
 an ungrounded filing-deadline date that appeared nowhere in its input
 data.
 
+## Outside India
+
+This service is genuinely India-specific — every source above is
+incometax.gov.in — and isn't being rebuilt per country. If a household's
+selected country (`convex/jurisdiction.ts`) isn't India, every result
+here pushes one honest, factual caveat into its existing narration —
+naming the real source and the household's actual region — rather than
+silently presenting India-only guidance as if it applied everywhere.
+Nothing about the calculation itself changes; an India household's
+figures are unaffected.
+
 ## Key files
 
 - `convex/taxPlanning.ts` — profile, deduction summary, regime comparison, gap detection

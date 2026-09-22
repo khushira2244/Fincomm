@@ -152,7 +152,7 @@ function AuthenticatedApp() {
           heading="Start your financial foundation"
           subtext="Add your income, expenses, loans, and savings — this becomes the foundation everything else is calculated from."
           buttonLabel="Add financial details"
-          onAction={() => void ensureHousehold()}
+          onAction={(country) => void ensureHousehold({ country })}
         />
       </div>
     );

@@ -5,19 +5,21 @@
 - **What it does:** Tracks a household's income, expenses, obligations, and
   assets, and calculates how many months of runway its liquid savings cover.
 - **Live app:** https://quixotic-dalmatian-305.convex.site
-- **Repo:** none
+- **Repo:** https://github.com/khushira2244/Fincomm
 - **Frontend:** Convex static hosting (custom, built from HTTP Actions +
   File Storage — see 2026-09-19 entries)
 - **Convex deployment:** https://utmost-puffin-491.convex.cloud
 - **Components:** @agentmail/convex, @firecrawl/firecrawl-convex (Firecrawl
-  now used: one allowlisted benchmark-rate scrape in Loan & Debt Resilience)
+  now used across multiple services: benchmark-rate scrapes for both RBI
+  and the US Federal Reserve, IRDAI/Income Tax Dept pages, and real
+  sector/scheme searches)
 - **Convex features:** schema, tables, indexes, query, mutation, action,
   internalMutation, internalAction, internalQuery, HTTP actions, scheduled
   functions, cron jobs, file storage
 - **Auth:** Convex Auth
 - **AI models:** gpt-4o (via direct OpenAI API calls in Convex actions)
 - **Started:** 2026-09-04T20:11:09Z
-- **Last updated:** 2026-09-18T10:30:00Z
+- **Last updated:** 2026-09-22T04:00:00Z
 
 ## Log
 
@@ -1908,3 +1910,180 @@ unprompted), and whether every production env var (AgentMail/
 Firecrawl/OpenAI keys, auth's SITE_URL) is set — these were confirmed
 unset as of the last check and haven't been re-verified since the
 user's deploy.
+
+### 2026-09-19 (later still) — Production auth keys provisioned
+Sign-up/sign-in on production was throwing a raw Convex server error —
+production had never had its own Convex Auth signing keys, only the
+AgentMail/Firecrawl/OpenAI keys copied over earlier. Ran
+`npx @convex-dev/auth --prod` (non-interactively, via `--web-server-url`
+to supply the prod `*.convex.site` URL as the answer to its one prompt),
+which generated a fresh `JWT_PRIVATE_KEY`/`JWKS` pair for production
+specifically (never reused dev's) and set `SITE_URL`. Confirmed all
+three now present via `npx convex env list --prod --names-only`.
+
+### 2026-09-21 - 5aabb39 — Real bug: Career & Income silent failure
+User-reported demo-blocking bug: adding a Career & Income entry in Goal
+& Situation Planning showed "No entries yet" forever, with no visible
+error. Root-caused by direct backend calls (not guessed): the mutation
+and query were both correct — the frontend parsed the "Expected income"
+field with plain `Number(income.value)`, and a naturally-typed
+comma-formatted figure like `15,00,000` parses to `NaN`, which the
+backend's integer check correctly rejects — but the submit handler had
+no `.catch()`, so the rejection was completely silent. Fixed in
+`TimelineDetailScreen.tsx`: strip non-digit characters before parsing,
+and surface a real inline error on any rejection. Verified against the
+real dev deployment via direct mutation calls: a comma-formatted amount
+that previously vanished silently now saves correctly and produces a
+visible error only for a genuinely invalid entry.
+
+### 2026-09-21 - 3cfaa93 — Real bug: navigation state lost between services
+Second user-reported bug: opening a timeline's detail view, adding
+entries, switching to another service via the sidebar, then clicking
+back into "Goal & Situation Planning" always reset to the bare overview
+screen — discarding the open timeline, even though nothing was actually
+lost server-side. Root cause: the sidebar's `onNavigate` handler
+unconditionally rebuilt a fresh route for that service on every click.
+Fixed in `App.tsx` with a `lastGoalPlanningRoute` ref that remembers
+whichever Goal & Situation Planning sub-screen was last shown and
+restores it specifically when returning to that service via the
+sidebar — every other service's navigation is untouched.
+
+### 2026-09-21 - b904dfa — Government/Economic Intelligence: immediate initial assessment
+Real product gap closed, not just a demo fix: saving a job/business
+livelihood profile previously only set up silent day-over-day
+change-detection — the screen's own question ("Will the government's
+new IT sector investment affect hiring in my industry?") went
+unanswered until some future change happened to be detected, which
+could be days away. Added a new `findingType: "initialAssessment"` to
+`economicFindings` (`convex/schema.ts`) and two new functions in
+`convex/governmentEconomic.ts` (`checkInitialJobAssessment`,
+`checkInitialBusinessAssessment`) that run one real Firecrawl
+search + one OpenAI narration pass immediately on a household's first
+save for a given sector/business type — always creating a real finding,
+honestly saying "no major signals found right now" when that's what the
+search shows, never forcing a dramatic result. The same real search
+result also seeds the existing ongoing monitor's baseline, so the
+daily cron correctly treats it as the starting point rather than firing
+a false "increase" the next time it runs.
+
+One real bug caught during verification, not assumed: the first version
+phrased its search query differently from the existing ongoing
+sector-risk check, so the two independent searches could return
+different content and both fire — two real but redundant findings on
+one save. Fixed by aligning the query wording; reverified clean
+(exactly one finding per save, confirmed for both job and business
+tracks, with a simulated "next day" check producing zero duplicates).
+
+### 2026-09-22 — OpenAI key incident (env var, no code change)
+Several AI-dependent features (Side-Income estimates, Insurance/
+Investment/Tax narration, Government/Economic extraction, Income
+Resilience narration) started failing with a `401` from OpenAI across
+both dev and prod — the deployed `OPENAI_API_KEY` had gone invalid.
+Reproduced directly against the backend to confirm it wasn't a code
+regression, then the user rotated the key and set it via
+`npx convex env set OPENAI_API_KEY ... ` on both deployments.
+Reconfirmed working with a real extraction call on each deployment
+afterward.
+
+### 2026-09-22 (later) - working tree — Multi-jurisdiction support
+Architecture change: households now carry a `country`
+("IN" | "US" | "EU" | "OTHER", schema.ts), collected once at account
+setup (a real country `<select>` in `EmptyState.tsx`, wired through
+`ensureHousehold`). New `convex/jurisdiction.ts` is the one place every
+service reads country-specific source info from — `rateSourceUrl: null`
+for a country with no real integration yet means "unavailable", never a
+fabricated source.
+
+**Real proof of concept, not just config:** Loan & Debt Resilience's
+benchmark-rate context is now genuinely jurisdiction-routed. India
+still reads RBI's real Policy Repo Rate (unchanged, regression-verified:
+still 5.25%). A real US Federal Reserve integration was added and
+verified live against the actual H.15 release page — real bug found
+and fixed in the process: the page's daily rate values are each on
+their own line, not inline like RBI's table, so the first parser
+(bounded to non-newline characters) matched nothing and always returned
+null; fixed by letting the match window span newlines and take the 5th
+(most recent) value. Verified live: a real scrape returned 3.88%,
+independently cross-checked against a direct fetch of the same page.
+EU/OTHER households get an honest "no source configured yet" fallback
+— confirmed no crash, no invented number, and fixed a real frontend gap
+this exposed (the UI would have rendered a broken `Source: null` link).
+
+Tax Planning, Insurance, and Investment & Risk Planning — all
+genuinely India-specific (incometax.gov.in, IRDAI, SEBI) and not being
+rebuilt per-country — now push one honest caveat into their existing
+`narration.caveats` array when a household's country isn't India,
+naming the real source and the household's actual selected region.
+Zero calculation logic touched; verified live that an India household's
+figures are byte-identical before and after (₹71,00,000 life-cover gap,
+`LIKELY_ADEQUATE`, `LIMITED_CAPACITY`/₹56,000 surplus — all matching
+prior verification exactly) and that the caveat never leaks across
+households in the same test run.
+
+**Test coverage added**, since none existed in this project before now:
+`scripts/jurisdiction-tests.mts`, run via `npx tsx` against the real dev
+deployment (no vitest/convex-test dependency added — the app's real
+external calls to Firecrawl/OpenAI aren't meaningfully mockable, so this
+hits the real backend the same way every other verification in this log
+does). 17 checks: real IN/US/EU routing, all three services' caveat
+presence/absence, cross-household isolation, country validation and
+defaulting, cache-scoping per country, a real pre-existing household
+with no country field falling back safely, and a regression fixture for
+the Fed-parser newline bug. One real bug the suite itself caught (in the
+test's own assertion regex, not the app) was fixed before the full 17/17
+pass. The two parser functions were extracted into a new dependency-free
+`convex/rateParsers.ts` specifically so they're unit-testable outside
+the Convex runtime.
+
+### 2026-09-22 (later still) - working tree — Income Resilience: Reference Benchmarks + impact-summary loop
+Two connected additions to Income Resilience, `convex/incomeResilience.ts`.
+
+**Reference Benchmarks panel** — a read-only comparison table (new
+section in `IncomeResilienceScreen.tsx`), composing values other
+services already compute (Financial Foundation's runway, Loan & Debt's
+`getDebtOverview`, a direct read of `insurancePolicies`) against fixed,
+honestly-labeled heuristic ranges (runway 3–6mo, DTI <36%, savings rate
+~20%, housing burden <30%, life-cover 10–15×) — never claimed as
+official or India-specific, so no jurisdiction caveat applies here.
+Housing burden honestly reports "not enough data" rather than guessing
+at which expense labels mean "housing" (no such category exists in the
+schema); life-cover multiple is always reported as "depends on your
+situation," never numerically judged, matching Insurance's own existing
+caution. Hand-verified all 5 rows against a real household's raw data —
+exact match. Reactive by construction (a plain query subscribes to
+everything it transitively reads); confirmed at the data layer via a
+real mutation immediately followed by a fresh, correctly-changed read.
+
+**Mutation → impact summary → AgentMail** — `updateIncomeSource`
+(`convex/incomeSources.ts`) now schedules an async, non-blocking
+follow-up action on a real amount change. It reuses the benchmark
+panel's own classification function (not a parallel scoring system) to
+diff a real "before" scenario (the pre-mutation amount, captured at the
+moment of the write) against the real committed "after" state, detects
+which of runway/debt-burden/savings-rate/goal-feasibility/benchmark
+-status genuinely changed, narrates the result with one bounded OpenAI
+call, and sends it via the existing AgentMail pattern.
+
+Verified live end to end on a real household: changed salary
+₹1,00,000 → ₹45,000, `stateRevision` incremented, exactly 5 affected
+entries (none spurious — housing/life-cover correctly excluded since
+their classification never moves), a real AgentMail send confirmed
+(`status: "sent"`, real Amazon SES message id), and the delivered
+email's before/after figures matched the real DB state exactly. A
+second household's `stateRevision` stayed untouched throughout,
+confirming isolation. The test household's income was restored
+afterward, which also exercised the reverse-direction case live.
+
+### 2026-09-22 (later still) - ab7ad6d, a91c96a — Landing page: how-it-works + tool cards
+Two landing-page additions to `AuthScreen.tsx`. A "How FinComp works"
+section (numbered Describe → Extract → Compute → Connect steps beside a
+styled preview of a real Financial Foundation result card) — the
+numbered `[01/04]` eyebrow tag from the first version was removed after
+feedback and replaced with a plain intro paragraph. Then a "Built with"
+section replacing the earlier plain tool cards: four tools (Convex,
+Firecrawl, AgentMail, OpenAI) each with a generic (non-trademarked) icon
+mark, a "Live in production" badge, and a description naming the real,
+specific thing each one does in this app (Convex Auth + crons + file
+storage + this page's own hosting; the real RBI/IRDAI/Income Tax Dept
+scrapes; the real inbox + proactive-alert loop; narration/extraction
+only, never calculation) — not a generic tech-stack blurb.

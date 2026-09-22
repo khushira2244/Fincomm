@@ -30,6 +30,18 @@ A per-household 24-hour cap prevents alert spam: at most one proactive
 email per day, with any additional significant findings held for the
 next eligible digest rather than dropped.
 
+## Immediate initial assessment
+
+Push doesn't mean silent until day two. The first time a household
+saves a usable sector or business type, one real Firecrawl search +
+one OpenAI narration pass runs immediately, creating a genuine finding
+that answers "what's happening right now" — never forcing a dramatic
+result when there isn't one (an honest "no major signals found right
+now" is a real, valid outcome). That same real result seeds the ongoing
+monitor's baseline, so the next scheduled check compares against a real
+first observation instead of treating a later read as the baseline and
+firing a false "increase".
+
 ## Key files
 
 - `convex/governmentEconomic.ts` — profiles, findings, severity, proactive send

@@ -492,11 +492,16 @@ function AffordabilityResult({ result }: { result: any }) {
         ) : (
           <>{rc.note} </>
         )}
-        Source:{" "}
-        <a href={rc.sourceUrl} target="_blank" rel="noreferrer" style={linkStyle}>
-          {rc.sourceLabel}
-        </a>
-        . {rc.available && rc.note}
+        {rc.sourceUrl && rc.sourceLabel && (
+          <>
+            Source:{" "}
+            <a href={rc.sourceUrl} target="_blank" rel="noreferrer" style={linkStyle}>
+              {rc.sourceLabel}
+            </a>
+            .{" "}
+          </>
+        )}
+        {rc.available && rc.note}
       </div>
 
       <EmailSummaryButton narration={n} deterministic={d} />

@@ -20,6 +20,8 @@ import type { Id } from "./_generated/dataModel";
 import { requireMembership } from "./access";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { AgentMail } from "@agentmail/convex";
+import { jurisdictionConfig, resolveCountry, type Country } from "./jurisdiction";
+import { parseBenchmarkRateBps, parseFedFundsRateBps } from "./rateParsers";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -30,14 +32,15 @@ const agentmailSender = new AgentMail(components.agentmail);
 
 const firecrawl = new FirecrawlClient(components.firecrawl);
 
-// The one allowlisted public benchmark-rate source — RBI's own homepage
-// "Current Rates" table (official central-bank source, not a news
-// aggregator), verified to load and scrape cleanly (2026-09-12: its
-// Policy Repo Rate cell parses to the same 5.25% the prior aggregator
-// source reported). Context only — never part of the maths, and never
-// a stand-in for the user's specific lender's rate.
-const RATE_SOURCE_URL = "https://www.rbi.org.in/";
-const RATE_SOURCE_LABEL = "Reserve Bank of India — official Policy Repo Rate";
+// Benchmark-rate source is jurisdiction-scoped — see convex/jurisdiction.ts
+// for the per-country config every function below reads. India's RBI
+// homepage "Current Rates" table (official central-bank source, not a
+// news aggregator) was verified to load and scrape cleanly (2026-09-12:
+// its Policy Repo Rate cell parses to the same 5.25% a prior aggregator
+// source reported); the US Federal Reserve's H.15 release was verified
+// the same way on 2026-09-22 (see parseFedFundsRateBps below). Context
+// only in both cases — never part of the maths, and never a stand-in
+// for the user's specific lender's rate.
 const RATE_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000; // re-scrape at most once/day
 
 // =====================================================================
@@ -445,19 +448,19 @@ export const checkAnalysisCurrent = query({
 // =====================================================================
 
 export const ensureRateSource = internalMutation({
-  args: {},
+  args: { url: v.string(), label: v.string(), authorityLevel: v.string() },
   returns: v.id("sourceRegistry"),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("sourceRegistry")
-      .withIndex("by_url", (q) => q.eq("url", RATE_SOURCE_URL))
+      .withIndex("by_url", (q) => q.eq("url", args.url))
       .first();
     if (existing) return existing._id;
     return await ctx.db.insert("sourceRegistry", {
-      url: RATE_SOURCE_URL,
-      label: RATE_SOURCE_LABEL,
+      url: args.url,
+      label: args.label,
       isAllowlisted: true,
-      authorityLevel: "official-central-bank",
+      authorityLevel: args.authorityLevel,
     });
   },
 });
@@ -502,38 +505,31 @@ export const saveRateSnapshot = internalMutation({
   },
 });
 
-// Deterministic parse (regex, never AI) of a benchmark percentage from
-// scraped markdown. Returns basis points or null. Targets RBI's own
-// "Current Rates" table first (e.g. "Policy Repo Rate | :<br> 5.25%");
-// falls back to looser phrasing so a markup change degrades gracefully
-// instead of going silent.
-function parseBenchmarkRateBps(markdown: string): number | null {
-  const text = markdown.replace(/\s+/g, " ");
-  const patterns = [
-    /policy repo rate\s*\|?\s*:?\s*(?:<br>)?\s*(\d{1,2}(?:\.\d{1,2})?)\s*%/i,
-    /(?:policy )?repo rate[^.|]{0,40}?(\d{1,2}(?:\.\d{1,2})?)\s*(?:percent|%)/i,
-    /benchmark interest rate[^.]*?(\d{1,2}(?:\.\d{1,2})?)\s*(?:percent|%)/i,
-  ];
-  for (const re of patterns) {
-    const m = text.match(re);
-    if (m) {
-      const pct = Number(m[1]);
-      if (pct >= 0 && pct <= 25) return Math.round(pct * 100);
-    }
-  }
-  return null;
-}
+// parseBenchmarkRateBps / parseFedFundsRateBps now live in
+// convex/rateParsers.ts (imported above) — extracted there specifically
+// so they're unit-testable with `npx tsx` outside the Convex runtime;
+// see scripts/jurisdiction-tests.mts.
 
 type RateContext = {
   available: boolean;
   referenceRatePercent: number | null;
   retrievalDate: number | null;
-  sourceUrl: string;
-  sourceLabel: string;
+  sourceUrl: string | null;
+  sourceLabel: string | null;
   quotedRatePercent: number;
   differencePercentagePoints: number | null;
   note: string;
 };
+
+// Per-country parser dispatch — the ONLY place that decides which regex
+// runs on which country's scraped text. Adding a real country here means
+// adding a real, verified parser function, never reusing another
+// country's regex against a different source's markup by coincidence.
+function parseRateForCountry(country: Country, markdown: string): number | null {
+  if (country === "IN") return parseBenchmarkRateBps(markdown);
+  if (country === "US") return parseFedFundsRateBps(markdown);
+  return null; // EU/OTHER: no parser configured yet — see jurisdiction.ts
+}
 
 async function getRateContext(
   ctx: Parameters<typeof firecrawl.scrape>[0] & {
@@ -541,19 +537,34 @@ async function getRateContext(
     runMutation: (ref: unknown, args: unknown) => Promise<unknown>;
   },
   quotedRateBps: number,
+  countryRaw: string | null | undefined,
 ): Promise<RateContext> {
+  const country = resolveCountry(countryRaw);
+  const config = jurisdictionConfig[country];
+
   const base: RateContext = {
     available: false,
     referenceRatePercent: null,
     retrievalDate: null,
-    sourceUrl: RATE_SOURCE_URL,
-    sourceLabel: RATE_SOURCE_LABEL,
+    sourceUrl: config.rateSourceUrl,
+    sourceLabel: config.rateSourceLabel,
     quotedRatePercent: bpsToPercent(quotedRateBps),
     differencePercentagePoints: null,
-    note: "The official reference rate wasn't available this time (source unreachable or unparseable) — the affordability result above was calculated without it and is unaffected. This context, when available, only informs the picture; it never validates or invalidates your specific loan offer.",
+    note:
+      config.rateSourceUrl === null
+        ? `No official benchmark-rate source is configured yet for ${config.label} — the affordability result above was calculated without it and is unaffected. This isn't an error; that reference context simply isn't built for this jurisdiction yet.`
+        : "The official reference rate wasn't available this time (source unreachable or unparseable) — the affordability result above was calculated without it and is unaffected. This context, when available, only informs the picture; it never validates or invalidates your specific loan offer.",
   };
+  if (config.rateSourceUrl === null || config.rateSourceLabel === null) return base;
+  const sourceUrl = config.rateSourceUrl;
+  const sourceLabel = config.rateSourceLabel;
+
   try {
-    const sourceId = (await ctx.runMutation(internal.loanDebt.ensureRateSource, {})) as Id<"sourceRegistry">;
+    const sourceId = (await ctx.runMutation(internal.loanDebt.ensureRateSource, {
+      url: sourceUrl,
+      label: sourceLabel,
+      authorityLevel: config.rateAuthorityLevel,
+    })) as Id<"sourceRegistry">;
     const recent = (await ctx.runQuery(internal.loanDebt.getRecentRateSnapshot, {
       sourceId,
       now: Date.now(),
@@ -565,11 +576,9 @@ async function getRateContext(
       fetchedAt = recent.fetchedAt;
       rateBps = recent.extractedRateBasisPoints;
     } else {
-      // Allowlist assertion before any scrape.
-      if (RATE_SOURCE_URL !== RATE_SOURCE_URL) throw new Error("URL not allowlisted");
-      const doc = await firecrawl.scrape(ctx, RATE_SOURCE_URL, { formats: ["markdown"] });
+      const doc = await firecrawl.scrape(ctx, sourceUrl, { formats: ["markdown"] });
       const md = (doc.markdown ?? doc.summary ?? "") as string;
-      rateBps = parseBenchmarkRateBps(md);
+      rateBps = parseRateForCountry(country, md);
       fetchedAt = Date.now();
       await ctx.runMutation(internal.loanDebt.saveRateSnapshot, {
         sourceId,
@@ -585,12 +594,12 @@ async function getRateContext(
       available: true,
       referenceRatePercent: bpsToPercent(rateBps),
       retrievalDate: fetchedAt,
-      sourceUrl: RATE_SOURCE_URL,
-      sourceLabel: RATE_SOURCE_LABEL,
+      sourceUrl,
+      sourceLabel,
       quotedRatePercent: bpsToPercent(quotedRateBps),
       differencePercentagePoints:
         Math.round((bpsToPercent(quotedRateBps) - bpsToPercent(rateBps)) * 100) / 100,
-      note: "This is RBI's official policy rate, shown as background context — it is not a check of your specific lender's rate, and it does not validate or invalidate the affordability result above (already decided without it). Your lender's actual offer may reasonably sit above or below it.",
+      note: `This is the official reference rate for ${config.label}, shown as background context — it is not a check of your specific lender's rate, and it does not validate or invalidate the affordability result above (already decided without it). Your lender's actual offer may reasonably sit above or below it.`,
     };
   } catch {
     return base;
@@ -666,6 +675,7 @@ export const gatherAffordabilityData = internalQuery({
     return {
       householdId,
       stateRevision: household?.stateRevision ?? 0,
+      country: household?.country ?? null,
       dependableMonthlyIncome,
       essentialMonthlyExpenses,
       existingEmiTotal,
@@ -694,6 +704,7 @@ export const checkAffordability = action({
     const data = (await ctx.runQuery(internal.loanDebt.gatherAffordabilityData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       dependableMonthlyIncome: number;
       essentialMonthlyExpenses: number;
       existingEmiTotal: number;
@@ -806,7 +817,7 @@ export const checkAffordability = action({
       },
     };
 
-    const rateContext = await getRateContext(ctx as never, o.annualRateBasisPoints);
+    const rateContext = await getRateContext(ctx as never, o.annualRateBasisPoints, data.country as string | null);
     const narration = await narrateAffordability(state, deterministic, rateContext);
 
     const result = { state, deterministic, rateContext, narration, generatedAtStateRevision: data.stateRevision };

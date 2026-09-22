@@ -40,11 +40,24 @@ result; it never sees raw arithmetic.
 directly ("Bundled insurance covers ₹X of the balance") and warns when a
 loan of ₹5,00,000+ has none recorded.
 
-## Real sourced context
+## Real sourced context, routed by jurisdiction
 
-One allowlisted Firecrawl scrape of RBI's own homepage (Policy Repo
-Rate) is shown as clearly-labelled *context* next to a quoted rate — it
-never feeds the calculation or the result state, and is cached ~1 day.
+The reference-rate context is jurisdiction-aware (`convex/jurisdiction.ts`):
+a household's own `country` decides which real source its rate context
+comes from, not a single hardcoded one.
+
+- **India** — RBI's own homepage (Policy Repo Rate).
+- **United States** — the Federal Reserve's H.15 release (Federal Funds
+  Effective Rate). Its daily values are laid out one per line rather
+  than in a single inline table like RBI's — the parser accounts for
+  that and takes the most recent of the week's five values.
+- **EU / other** — no real source is integrated yet, so the context
+  honestly reports "not available" rather than substituting another
+  country's number or guessing.
+
+Either way, this is shown as clearly-labelled *context* next to a
+quoted rate — it never feeds the calculation or the result state, and
+is cached ~1 day per source.
 
 ## Key files
 

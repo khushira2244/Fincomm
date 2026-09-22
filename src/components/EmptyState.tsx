@@ -1,5 +1,14 @@
+import { useState } from "react";
 import { colors, fontSans, fontSerif, radius } from "../theme";
+import { COUNTRY_LABELS, Country, DEFAULT_COUNTRY } from "../../convex/jurisdiction";
 
+const COUNTRY_OPTIONS: Country[] = ["IN", "US", "EU", "OTHER"];
+
+// Collected once, here, at account setup — never asked again unless the
+// household changes it later in settings. Every service reads this off
+// households.country (see convex/jurisdiction.ts); it decides which
+// benchmark-rate source, tax logic, and regulator context is real for
+// this household versus an honest "not available yet" fallback.
 export function EmptyState({
   heading,
   subtext,
@@ -9,8 +18,9 @@ export function EmptyState({
   heading: string;
   subtext: string;
   buttonLabel: string;
-  onAction: () => void;
+  onAction: (country: Country) => void;
 }) {
+  const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
   return (
     <div
       style={{
@@ -46,8 +56,30 @@ export function EmptyState({
       <p style={{ fontFamily: fontSans, fontSize: "14px", color: colors.inkSoft, margin: 0 }}>
         {subtext}
       </p>
+      <label style={{ display: "flex", flexDirection: "column", gap: "4px", width: "220px", fontFamily: fontSans, fontSize: "12px", color: colors.inkSoft }}>
+        Country
+        <select
+          value={country}
+          onChange={(e) => setCountry(e.target.value as Country)}
+          style={{
+            fontFamily: fontSans,
+            fontSize: "14px",
+            background: "#ffffff",
+            color: colors.ink,
+            border: `1px solid ${colors.sageGreen}`,
+            borderRadius: radius,
+            padding: "8px 10px",
+          }}
+        >
+          {COUNTRY_OPTIONS.map((c) => (
+            <option key={c} value={c}>
+              {COUNTRY_LABELS[c]}
+            </option>
+          ))}
+        </select>
+      </label>
       <button
-        onClick={onAction}
+        onClick={() => onAction(country)}
         style={{
           fontFamily: fontSans,
           fontWeight: 600,

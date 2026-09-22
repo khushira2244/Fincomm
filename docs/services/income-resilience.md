@@ -32,6 +32,40 @@ every time, no manual save button. A proactive AgentMail alert fires
 specifically on a genuine transition **into** the worst tier (`atRisk`)
 — never on a repeat check or an improvement.
 
+## Reference Benchmarks panel
+
+A read-only comparison table — your household's own numbers, already
+computed elsewhere in FinComp, next to fixed heuristic ranges (emergency
+runway 3–6 months, debt-to-income below 36%, savings rate around 20%,
+housing burden below 30%, life-cover 10–15×). Nothing here is a new
+calculation: runway and debt-payment figures are composed from
+[Financial Foundation](./financial-foundation.md)'s and [Loan & Debt
+Resilience](./loan-debt-resilience.md)'s own existing queries, and life
+coverage is a direct read of the same `insurancePolicies` table
+Insurance owns. Every range is labelled a common convention, never an
+official or India-specific standard, so — unlike Tax/Insurance/
+Investment — no jurisdiction caveat applies here. Housing burden always
+reports "not enough data" rather than guessing which expense labels
+mean "housing" (no such category exists in the schema yet); the
+life-cover row is always reported as "depends on your situation," never
+numerically judged, matching Insurance's own caution about its adequacy
+check. A plain Convex query, so it updates live with no manual refresh.
+
+## Mutation → impact summary → AgentMail
+
+Changing income in Financial Foundation doesn't just update numbers
+silently. `updateIncomeSource` schedules an async, non-blocking
+follow-up that reuses the Reference Benchmarks panel's own
+classification logic to compare a real "before" scenario (the
+pre-mutation amount) against the real committed "after" state, detects
+which of runway, debt burden, savings rate, goal feasibility, and any
+benchmark status genuinely changed, narrates the result in one bounded
+OpenAI call, and emails a structured before/after summary via the same
+AgentMail pattern used everywhere else in the app — including the
+household's real `stateRevision` and a timestamp. Nothing fires when
+the affected list would be empty (a same-value edit, or a change too
+small to cross any threshold).
+
 ## The living note
 
 A free-text note per household (overwritten on save, not an

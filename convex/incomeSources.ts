@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import schema from "./schema";
 import { assertIntegerMinorUnits, bumpStateRevision, requireMembership } from "./access";
+import { internal } from "./_generated/api";
 
 export const addIncomeSource = mutation({
   args: {
@@ -72,6 +73,7 @@ export const updateIncomeSource = mutation({
     if (existing === null || existing.householdId !== membership.householdId) {
       throw new ConvexError("Income source not found.");
     }
+    const beforeAmountMinorUnits = existing.amountMinorUnits;
     await ctx.db.patch(args.incomeSourceId, {
       label: args.label,
       amountMinorUnits: args.amountMinorUnits,
@@ -81,6 +83,22 @@ export const updateIncomeSource = mutation({
       updatedAt: Date.now(),
     });
     await bumpStateRevision(ctx, membership.householdId);
+
+    // Async follow-up — schedules the impact-summary email, never
+    // blocks this mutation. Mutations can't call actions directly (a
+    // scheduled call is the same pattern convex/email.ts already
+    // established for AgentMail's own inbound path). Only worth running
+    // when the amount actually changed — a label/cadence-only edit with
+    // the same amount has no downstream financial impact to summarize.
+    if (beforeAmountMinorUnits !== args.amountMinorUnits) {
+      await ctx.scheduler.runAfter(0, internal.incomeResilience.sendImpactSummaryInternal, {
+        householdId: membership.householdId,
+        incomeSourceId: args.incomeSourceId,
+        incomeLabel: args.label,
+        beforeAmountMinorUnits,
+        afterAmountMinorUnits: args.amountMinorUnits,
+      });
+    }
     return null;
   },
 });

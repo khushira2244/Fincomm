@@ -91,6 +91,8 @@ export function IncomeResilienceScreen({ onNavigate }: { onNavigate: (key: Servi
 
         {result && <DimensionBreakdown result={result} onNavigate={onNavigate} />}
 
+        <ReferenceBenchmarksPanel />
+
         <BenchmarkStrip />
 
         <TrendCard />
@@ -318,6 +320,71 @@ function DimensionBreakdown({ result, onNavigate }: { result: any; onNavigate: (
         })}
       </div>
     </>
+  );
+}
+
+// =====================================================================
+// Reference Benchmarks — read-only comparison, composed entirely from
+// other services' own already-computed values (see
+// convex/incomeResilience.ts's getBenchmarkComparison). A plain query,
+// so it's automatically reactive to every table it transitively reads
+// (income, expenses, obligations, insurance policies) — no manual
+// refresh, no polling.
+// =====================================================================
+
+const STATUS_LABEL: Record<string, string> = {
+  within_range: "Within range",
+  below_range: "Below range",
+  above_range: "Above range",
+  insufficient_data: "Not enough data",
+  context_dependent: "Depends on your situation",
+};
+
+function ReferenceBenchmarksPanel() {
+  const now = useState(() => Date.now())[0];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = useQuery(api.incomeResilience.getBenchmarkComparison, { now }) as any[] | undefined;
+
+  return (
+    <Card>
+      <div style={{ fontFamily: fontSerif, fontSize: "16px", marginBottom: "2px" }}>Reference Benchmarks</div>
+      <div style={{ fontSize: "12.5px", color: colors.inkSoft, marginBottom: "12px" }}>
+        How your household's own numbers, already computed elsewhere in FinComp, compare to common financial-planning conventions — not official standards, and not personalized advice.
+      </div>
+      {rows === undefined ? (
+        <div style={{ fontSize: "12px", color: colors.inkSoft }}>Loading…</div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+            <thead>
+              <tr style={{ textAlign: "left", borderBottom: `1px solid ${colors.creamDim}` }}>
+                <th style={{ padding: "6px 8px", fontWeight: 700, color: colors.inkSoft, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Metric</th>
+                <th style={{ padding: "6px 8px", fontWeight: 700, color: colors.inkSoft, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Your Household</th>
+                <th style={{ padding: "6px 8px", fontWeight: 700, color: colors.inkSoft, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Reference Range</th>
+                <th style={{ padding: "6px 8px", fontWeight: 700, color: colors.inkSoft, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {rows.map((row: any) => (
+                <tr key={row.metric} style={{ borderBottom: `1px solid ${colors.creamDim}` }}>
+                  <td style={{ padding: "8px", fontWeight: 600 }}>{row.label}</td>
+                  <td style={{ padding: "8px" }}>{row.yourHouseholdDisplay}</td>
+                  <td style={{ padding: "8px", color: colors.inkSoft }}>{row.referenceRangeDisplay}</td>
+                  <td style={{ padding: "8px", color: colors.inkSoft }}>{STATUS_LABEL[row.status] ?? row.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ fontSize: "10.5px", color: colors.inkSoft, marginTop: "10px" }}>
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {rows && Array.from(new Set(rows.map((r: any) => r.sourceNote as string))).map((note, i) => (
+          <div key={i}>{note}</div>
+        ))}
+      </div>
+    </Card>
   );
 }
 

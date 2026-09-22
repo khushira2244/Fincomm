@@ -40,6 +40,14 @@ change this answer", "what this doesn't tell you") is template-built
 from the same diagnostic object that decides the tier, so it can never
 contradict the number it explains.
 
+## Outside India
+
+Genuinely SEBI-specific and not being rebuilt per country. If a
+household's selected country (`convex/jurisdiction.ts`) isn't India,
+the readiness check pushes one honest caveat into its existing
+narration naming SEBI and the household's actual region — the
+deterministic readiness tier and figures are untouched either way.
+
 ## Key files
 
 - `convex/investment.ts` — readiness, scenarios, the ask router

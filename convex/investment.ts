@@ -23,6 +23,7 @@ import type { Id } from "./_generated/dataModel";
 import { requireMembership } from "./access";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { AgentMail } from "@agentmail/convex";
+import { resolveCountry, nonIndiaJurisdictionCaveat } from "./jurisdiction";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -53,6 +54,7 @@ export const gatherReadinessData = internalQuery({
     const base = (await ctx.runQuery(internal.loanDebt.gatherAffordabilityData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       dependableMonthlyIncome: number;
       essentialMonthlyExpenses: number;
       existingEmiTotal: number;
@@ -66,6 +68,7 @@ export const gatherReadinessData = internalQuery({
     return {
       householdId,
       stateRevision: base.stateRevision,
+      country: base.country,
       dependableMonthlyIncome: base.dependableMonthlyIncome,
       eligibleLiquidReserveMinorUnits: base.eligibleLiquidAssets,
       emergencyReserveTargetMinorUnits: base.essentialMonthlyExpenses,
@@ -270,6 +273,7 @@ export const checkInvestmentReadiness = action({
     const data = (await ctx.runQuery(internal.investment.gatherReadinessData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       dependableMonthlyIncome: number;
       eligibleLiquidReserveMinorUnits: number;
       emergencyReserveTargetMinorUnits: number;
@@ -277,6 +281,7 @@ export const checkInvestmentReadiness = action({
       existingEmiTotalMinorUnits: number;
       activeGoalCount: number;
     };
+    const jurisdictionCaveat = nonIndiaJurisdictionCaveat(resolveCountry(data.country), "SEBI");
     const investableSurplusMinorUnits =
       data.eligibleLiquidReserveMinorUnits - data.emergencyReserveTargetMinorUnits - data.earmarkedForGoalsMinorUnits;
     // See insuranceAdequacyModifierFromCheck's comment — reads Insurance
@@ -324,7 +329,8 @@ export const checkInvestmentReadiness = action({
     });
     if (cached) {
       const c = cached as { _id: Id<"investmentReadinessChecks">; narration: { headline: string; plainLanguage: string; caveats: string[] } };
-      return { checkId: c._id, ...deterministic, narration: c.narration, ...extras, _fromCache: true };
+      const cachedNarration = jurisdictionCaveat ? { ...c.narration, caveats: [...c.narration.caveats, jurisdictionCaveat] } : c.narration;
+      return { checkId: c._id, ...deterministic, narration: cachedNarration, ...extras, _fromCache: true };
     }
 
     const system = `You put an ALREADY-DECIDED investment-readiness result into plain language for an Indian household. You are given the readiness state (one of NO_SURPLUS_YET, LIMITED_CAPACITY, MODERATE_CAPACITY, STRONG_CAPACITY, INSUFFICIENT_DATA) and the deterministic figures behind it. Return ONLY JSON: { "headline": string, "plainLanguage": string, "caveats": string[] }.
@@ -345,7 +351,8 @@ Hard rules:
       narration,
       inputStateRevision: data.stateRevision,
     });
-    return { checkId: id, ...deterministic, narration, ...extras, _fromCache: false };
+    const narrationForCaller = jurisdictionCaveat ? { ...narration, caveats: [...narration.caveats, jurisdictionCaveat] } : narration;
+    return { checkId: id, ...deterministic, narration: narrationForCaller, ...extras, _fromCache: false };
   },
 });
 

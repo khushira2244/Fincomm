@@ -22,6 +22,7 @@ import type { Id } from "./_generated/dataModel";
 import { requireMembership } from "./access";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { AgentMail } from "@agentmail/convex";
+import { resolveCountry, nonIndiaJurisdictionCaveat } from "./jurisdiction";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -265,6 +266,7 @@ export const gatherAdequacyData = internalQuery({
     return {
       householdId,
       stateRevision: household?.stateRevision ?? 0,
+      country: household?.country ?? null,
       totalLifeCoverageMinorUnits,
       totalHealthCoverageMinorUnits,
       dependentsCount,
@@ -372,6 +374,7 @@ export const checkInsuranceAdequacy = action({
     const data = (await ctx.runQuery(internal.insuranceRiskPlanning.gatherAdequacyData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       totalLifeCoverageMinorUnits: number;
       totalHealthCoverageMinorUnits: number;
       dependentsCount: number;
@@ -380,6 +383,7 @@ export const checkInsuranceAdequacy = action({
       dependableMonthlyIncome: number;
       dependableEarnerCount: number;
     };
+    const jurisdictionCaveat = nonIndiaJurisdictionCaveat(resolveCountry(data.country), "IRDAI");
     const diag = diagnoseAdequacy(data);
     const deterministic = {
       totalLifeCoverageMinorUnits: data.totalLifeCoverageMinorUnits,
@@ -407,7 +411,8 @@ export const checkInsuranceAdequacy = action({
     });
     if (cached) {
       const c = cached as { _id: Id<"insuranceAdequacyChecks">; narration: { headline: string; plainLanguage: string; caveats: string[] } };
-      return { checkId: c._id, ...deterministic, narration: c.narration, ...extras, _fromCache: true };
+      const cachedNarration = jurisdictionCaveat ? { ...c.narration, caveats: [...c.narration.caveats, jurisdictionCaveat] } : c.narration;
+      return { checkId: c._id, ...deterministic, narration: cachedNarration, ...extras, _fromCache: true };
     }
 
     const system = `You put an ALREADY-COMPUTED insurance adequacy result into plain language for an Indian household. You are given: total life coverage on file, total health coverage on file, a dependents count, outstanding loan balance, bundled loan-linked life coverage, dependable monthly income, an already-computed estimated life cover need, an already-computed life coverage gap (positive = underinsured, negative or zero = surplus), and an already-decided health coverage assessment state (one of NONE, LIKELY_INSUFFICIENT, LIKELY_ADEQUATE, INSUFFICIENT_DATA). Return ONLY JSON: { "headline": string, "plainLanguage": string, "caveats": string[] }.
@@ -430,7 +435,8 @@ Hard rules:
       narration,
       inputStateRevision: data.stateRevision,
     });
-    return { checkId: id, ...deterministic, narration, ...extras, _fromCache: false };
+    const narrationForCaller = jurisdictionCaveat ? { ...narration, caveats: [...narration.caveats, jurisdictionCaveat] } : narration;
+    return { checkId: id, ...deterministic, narration: narrationForCaller, ...extras, _fromCache: false };
   },
 });
 
@@ -618,6 +624,7 @@ export const gatherGapData = internalQuery({
     return {
       householdId,
       stateRevision: household?.stateRevision ?? 0,
+      country: household?.country ?? null,
       outstandingLoanBalanceMinorUnits,
       totalLifeCoverageMinorUnits,
       bundledLifeCoverageMinorUnits,
@@ -733,6 +740,7 @@ export const checkInsuranceGaps = action({
     const data = (await ctx.runQuery(internal.insuranceRiskPlanning.gatherGapData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       outstandingLoanBalanceMinorUnits: number;
       totalLifeCoverageMinorUnits: number;
       bundledLifeCoverageMinorUnits: number;
@@ -742,6 +750,7 @@ export const checkInsuranceGaps = action({
       dependableMonthlyIncome: number;
       hasActiveBusiness: boolean;
     };
+    const jurisdictionCaveat = nonIndiaJurisdictionCaveat(resolveCountry(data.country), "IRDAI");
     const gaps = detectGaps(data);
 
     const cached = await ctx.runQuery(internal.insuranceRiskPlanning.findCachedGapDetection, {
@@ -750,7 +759,8 @@ export const checkInsuranceGaps = action({
     });
     if (cached) {
       const c = cached as { _id: Id<"insuranceGapDetections">; narration: { headline: string; plainLanguage: string; caveats: string[] } };
-      return { detectionId: c._id, gaps, narration: c.narration, _fromCache: true };
+      const cachedNarration = jurisdictionCaveat ? { ...c.narration, caveats: [...c.narration.caveats, jurisdictionCaveat] } : c.narration;
+      return { detectionId: c._id, gaps, narration: cachedNarration, _fromCache: true };
     }
 
     const system = `You put an ALREADY-DETECTED list of insurance/protection gaps into plain language for an Indian household. You are given an array of gaps, each with a gapType, a plain description, and a severity ("notable" or "significant"). If the array is empty, no gaps were found. Return ONLY JSON: { "headline": string, "plainLanguage": string, "caveats": string[] }.
@@ -773,7 +783,8 @@ Hard rules:
       narration,
       inputStateRevision: data.stateRevision,
     });
-    return { detectionId: id, gaps, narration, _fromCache: false };
+    const narrationForCaller = jurisdictionCaveat ? { ...narration, caveats: [...narration.caveats, jurisdictionCaveat] } : narration;
+    return { detectionId: id, gaps, narration: narrationForCaller, _fromCache: false };
   },
 });
 

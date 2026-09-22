@@ -41,16 +41,23 @@ flowchart TD
         QM["Queries & Mutations"]
         ACT["Actions"]
         HTTP["HTTP Actions"]
+        SCHED["Scheduled follow-ups\n(ctx.scheduler — async, non-blocking)"]
     end
 
     QM --> LOGIC["Deterministic per-service logic\nEMI · runway · affordability\ntax slabs · coverage gaps\n(plain TypeScript, no AI in the math)"]
+    QM -->|"a decision-relevant write\nbumps stateRevision"| SCHED
 
     ACT -->|"narrates a finished result,\nor extracts fields from free text\n— never computes a figure"| AI["OpenAI (gpt-4o)"]
-    ACT -->|"scrapes a real allowlisted source,\ncached in sourceRegistry"| FC["Firecrawl"]
-    FC --> SRC[("RBI · IRDAI\nIncome Tax Dept · MSME schemes")]
+    ACT -->|"scrapes a real allowlisted source,\nrouted per household.country,\ncached in sourceRegistry"| JUR["Jurisdiction config\n(convex/jurisdiction.ts)"]
+    JUR -->|"IN"| FC["Firecrawl"]
+    JUR -->|"US"| FC
+    JUR -->|"EU / OTHER — no source yet"| HONEST["Honest fallback\n(never a fake number)"]
+    FC --> SRC[("RBI · US Federal Reserve · IRDAI\nIncome Tax Dept · MSME schemes")]
 
+    SCHED -->|"before/after impact diff,\none bounded narration call"| AI
     HTTP -->|"inbound webhook\n(email → extraction → pending fact)"| AM["AgentMail"]
     HTTP -->|"outbound sends\n(alerts, on-demand summaries)"| AM
+    SCHED -->|"proactive send on a real change\n(tier drop, income change, ...)"| AM
 
     HTTP -->|"serves built frontend"| FS[("Convex File Storage")]
     FS --> SITE["FinComp served on *.convex.site\n(no native Convex static hosting —\nsee convex/staticSite.ts, convex/http.ts,\nscripts/deploy-static-site.mjs)"]
@@ -160,12 +167,16 @@ from real primitives instead.
 
 Financial rules and public information change over time. Firecrawl
 retrieves information from allowlisted, feature-specific pages —
-RBI's benchmark repo rate, IRDAI's health-insurance portability
-regulations, the Income Tax Department's slab and deduction pages, and
-targeted government/MSME scheme searches. This is not a general crawl of
-"every government source" — each integration scrapes a specific real
-page for a specific feature, and only what's been actually built and
-verified is listed here.
+RBI's benchmark repo rate, the US Federal Reserve's H.15 release,
+IRDAI's health-insurance portability regulations, the Income Tax
+Department's slab and deduction pages, and targeted government/MSME
+scheme and sector-risk searches. This is not a general crawl of "every
+government source" — each integration scrapes a specific real page for
+a specific feature, and only what's been actually built and verified is
+listed here. Which source a household's Loan & Debt reference-rate
+context uses is routed by their own selected country
+(`convex/jurisdiction.ts`) — a country with no real integration yet gets
+an honest "not available" message, never another country's number.
 
 FinComp stores source snapshots (`sourceRegistry`/`sourceSnapshots`)
 with retrieval dates and provenance, cached (1–60 days depending on the
@@ -212,7 +223,9 @@ until a human confirms them.
 6. [Investment & Risk Planning](./docs/services/investment-risk.md) reconsiders capacity after essential obligations.
 7. [Side-Income & Business Planning](./docs/services/side-income-business.md) can use the resulting monthly shortfall as a target.
 8. [Income Resilience](./docs/services/income-resilience.md) combines the effects into prioritized actions.
-9. The household can request a plain-language summary through AgentMail.
+9. The household doesn't have to ask: a plain-language, before/after
+   summary of exactly what changed goes out via AgentMail automatically
+   — the same request-a-summary button still works too.
 
 This is why FinComp needs to be one connected household context, not
 nine unrelated tabs.

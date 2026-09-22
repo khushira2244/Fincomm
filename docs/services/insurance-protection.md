@@ -44,6 +44,14 @@ own Health Insurance Regulations (Schedule-I) — application window,
 Portability Form, data-handover window, underwriting decision — not a
 paraphrase from training data.
 
+## Outside India
+
+Genuinely IRDAI-specific and not being rebuilt per country. If a
+household's selected country (`convex/jurisdiction.ts`) isn't India,
+the adequacy check and gap detection each push one honest caveat into
+their existing narration naming IRDAI and the household's actual
+region — the underlying formulas and figures are untouched either way.
+
 ## Key files
 
 - `convex/insuranceRiskPlanning.ts` — adequacy, portability, gap detection

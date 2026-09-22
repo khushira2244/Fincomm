@@ -27,6 +27,11 @@ export default defineSchema({
     name: v.string(),
     createdBy: v.id("users"),
     isDemoData: v.boolean(),
+    // Jurisdiction the household is in — see convex/jurisdiction.ts for
+    // the config every service reads off this. Optional: existing
+    // households predate this field; every reader treats a missing
+    // value as "IN" (resolveCountry's default), never as an error.
+    country: v.optional(v.union(v.literal("IN"), v.literal("US"), v.literal("EU"), v.literal("OTHER"))),
     // IMPORTANT: only increment this for DECISION-AFFECTING changes
     // (income/expense/obligation/goal/situation edits, confirmed
     // extracted facts). Never increment for UI preferences,

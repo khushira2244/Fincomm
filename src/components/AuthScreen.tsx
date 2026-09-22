@@ -52,10 +52,59 @@ const HOW_STEPS: { n: string; title: string; description: string }[] = [
   { n: "04", title: "Connect", description: "Every service that depends on this fact updates together — not nine separate tools that each need telling." },
 ];
 
-const MECHANISM_CARDS: { name: string; eyebrow: string; description: string }[] = [
-  { name: "Convex", eyebrow: "Backend & live state", description: "Every number you enter updates live, everywhere it's used — your runway, your loan checks, your plan." },
-  { name: "Firecrawl", eyebrow: "Real, sourced data", description: "Actual RBI rates, IRDAI rules, and tax slabs — scraped, dated, and shown as context, not guessed." },
-  { name: "OpenAI", eyebrow: "Explains, never decides", description: "Turns the real numbers into plain language — it narrates the math, it never invents it." },
+type ToolCard = { name: string; description: string; bg: string; icon: React.ReactNode };
+
+// Icon marks are deliberately generic/abstract (not each brand's exact
+// trademarked logo) — a simple line icon in a colored square, same
+// visual language as the reference, without reproducing protected marks.
+const TOOL_CARDS: ToolCard[] = [
+  {
+    name: "Convex",
+    bg: "#1F4A3A",
+    description:
+      "The database, real-time queries, Convex Auth sign-in, daily cron sweeps, file storage, and this page's own hosting on *.convex.site. It's why every screen updates without a refresh.",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F6F1E4" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 3.5c-3 2.5-3 14.5 0 17M12 3.5c3 2.5 3 14.5 0 17M3.5 12h17" />
+      </svg>
+    ),
+  },
+  {
+    name: "Firecrawl",
+    bg: "#B5651D",
+    description:
+      "Scrapes RBI's policy rate, IRDAI's portability rules, and the Income Tax Department's slabs, and searches real sector/scheme signals — always dated and sourced, never guessed.",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F6F1E4" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2.5c2 3 1 4.5-.5 6C10 10 9 11.5 9 13.5a3 3 0 0 0 6 0c0-1-.5-1.8-1-2.3.6 1.6-.2 3-1.5 3-1 0-1.8-.8-1.8-1.8 0-1.2 1-1.9 1.6-3 .9-1.6 1-3.6-.3-6.9Z" />
+        <path d="M7.5 14a4.5 4.5 0 0 0 9 0" />
+      </svg>
+    ),
+  },
+  {
+    name: "AgentMail",
+    bg: "#3C6E58",
+    description:
+      "Gives FinComp its own inbox: forward a bill and it's extracted automatically. When your resilience tier drops or a real economic signal hits, we email you first — unprompted.",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F6F1E4" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5.5" width="18" height="13" rx="2" />
+        <path d="m3.5 6.5 8.5 6.5 8.5-6.5" />
+      </svg>
+    ),
+  },
+  {
+    name: "OpenAI",
+    bg: "#201D17",
+    description:
+      "Narrates finished, deterministic calculations into plain language and extracts structured facts from documents and free text. It never computes a number itself.",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F6F1E4" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v6M12 15v6M4.9 6.9l4.2 4.2M14.9 12.9l4.2 4.2M3 12h6M15 12h6M4.9 17.1l4.2-4.2M14.9 11.1l4.2-4.2" />
+      </svg>
+    ),
+  },
 ];
 
 export function AuthScreen() {
@@ -280,63 +329,58 @@ export function AuthScreen() {
       </div>
 
       <div id="mechanism" style={{ background: colors.creamDim, borderTop: `1px solid ${colors.sageGreen}`, scrollMarginTop: "64px" }}>
-        <div style={{ maxWidth: "920px", margin: "0 auto", padding: "56px 24px 64px" }}>
-          <div style={{ textAlign: "center", marginBottom: "36px" }}>
-            <div style={eyebrowStyle}>The mechanism</div>
-            <h2 style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "26px", margin: 0, color: colors.ink }}>
-              One real number, checked from four directions.
-            </h2>
+        <div style={{ maxWidth: "980px", margin: "0 auto", padding: "56px 24px 64px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: "24px", marginBottom: "24px" }}>
+            <div>
+              <div style={{ ...eyebrowStyle, textAlign: "left", marginBottom: "8px" }}>Built with</div>
+              <h2 style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "28px", margin: 0, color: colors.ink }}>Four tools doing real work.</h2>
+            </div>
+            <p style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.5, maxWidth: "320px", margin: 0 }}>
+              Built for the Convex All Gas Hackathon, open source under MIT. Every integration below is genuinely wired into the live product — not a mockup.
+            </p>
           </div>
 
-          <div
-            style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "16px", alignItems: "stretch" }}
-          >
-            {MECHANISM_CARDS.map((card, i) => (
-              <div key={card.name} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ borderTop: `1px solid ${colors.sageGreen}`, marginBottom: "32px" }} />
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "28px", marginBottom: "32px" }}>
+            {TOOL_CARDS.map((tool) => (
+              <div key={tool.name}>
                 <div
                   style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "10px",
+                    background: tool.bg,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: "12px",
+                  }}
+                >
+                  {tool.icon}
+                </div>
+                <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "17px", color: colors.ink, marginBottom: "8px" }}>{tool.name}</div>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    color: colors.deepGreen,
                     background: "#ffffff",
                     border: `1px solid ${colors.sageGreen}`,
-                    borderRadius: radius,
-                    padding: "18px 20px",
-                    textAlign: "left",
-                    flex: 1,
+                    borderRadius: "10px",
+                    padding: "3px 10px",
+                    marginBottom: "10px",
                   }}
-                  className="hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
                 >
-                  <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "15px", color: colors.deepGreen, marginBottom: "4px" }}>{card.name}</div>
-                  <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: colors.midGreen, marginBottom: "8px" }}>
-                    {card.eyebrow}
-                  </div>
-                  <div style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.45 }}>{card.description}</div>
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: colors.deepGreen, display: "inline-block" }} />
+                  Live in production
                 </div>
-                {i < MECHANISM_CARDS.length - 1 && (
-                  <div className="hidden md:block" style={{ color: colors.sageGreen, fontSize: "20px", flexShrink: 0 }}>
-                    →
-                  </div>
-                )}
+                <p style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.55, margin: 0 }}>{tool.description}</p>
               </div>
             ))}
-          </div>
-
-          <div
-            style={{
-              background: "#ffffff",
-              border: `1px solid ${colors.sageGreen}`,
-              borderRadius: radius,
-              padding: "18px 20px",
-              textAlign: "left",
-              marginBottom: "24px",
-            }}
-            className="hover:shadow-lg transition-shadow duration-200"
-          >
-            <div style={{ fontFamily: fontSerif, fontWeight: 700, fontSize: "15px", color: colors.deepGreen, marginBottom: "4px" }}>AgentMail</div>
-            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: colors.midGreen, marginBottom: "8px" }}>
-              In and out, both real
-            </div>
-            <div style={{ fontSize: "13px", color: colors.inkSoft, lineHeight: 1.45 }}>
-              Forward a bill and it's read automatically. When something changes, we email you first — unprompted.
-            </div>
           </div>
 
           <div

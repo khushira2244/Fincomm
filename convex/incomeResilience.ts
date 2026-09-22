@@ -702,8 +702,390 @@ export const sweepAllHouseholds = internalAction({
   },
 });
 
+// =====================================================================
+// Reference Benchmarks — a read-only comparison panel. Every value
+// here is composed from another service's OWN existing public query
+// (Financial Foundation's runway, Loan & Debt's debt overview) or a
+// direct read of a table that service already owns (insurancePolicies)
+// — nothing here recomputes runway, debt, or coverage; only the
+// comparison against a fixed reference range is new.
+//
+// Ranges are common personal-finance CONVENTIONS (see each row's
+// sourceNote), never claimed as an official or India-specific
+// standard — so, unlike Tax/Insurance/Investment's jurisdiction
+// caveat, none applies here: "DTI below 36%", the 50/30/20 savings
+// guideline, etc. are the same generic heuristics regardless of
+// country, not a rule from an India-specific regulator. If a genuinely
+// jurisdiction-bound benchmark is ever added here, reuse
+// nonIndiaJurisdictionCaveat from jurisdiction.ts rather than inventing
+// a second caveat mechanism.
+// =====================================================================
+
+type BenchmarkStatus = "within_range" | "below_range" | "above_range" | "insufficient_data" | "context_dependent";
+
+function classifyAgainstRange(value: number | null, min: number | null, max: number | null): BenchmarkStatus {
+  if (value === null) return "insufficient_data";
+  if (min !== null && value < min) return "below_range";
+  if (max !== null && value > max) return "above_range";
+  return "within_range";
+}
+
+type BenchmarkRow = {
+  metric: string;
+  label: string;
+  yourHouseholdDisplay: string;
+  yourHouseholdRaw: number | null;
+  referenceRangeDisplay: string;
+  status: BenchmarkStatus;
+  sourceNote: string;
+};
+
+// Pure classification, exported so Part 2's before/after impact diff
+// below reuses the SAME function this live panel uses, rather than a
+// parallel copy of the range logic.
+export function buildBenchmarkRows(inputs: {
+  runwayStatus: "not_depleting" | "depleting";
+  runwayMonths: number | null; // null when not_depleting
+  dependableMonthlyIncomeMinorUnits: number;
+  essentialMonthlyExpensesMinorUnits: number;
+  totalEmiMinorUnits: number;
+  combinedMonthlyDebtPaymentMinorUnits: number; // from Loan & Debt's getDebtOverview
+  totalLifeCoverageMinorUnits: number;
+}): BenchmarkRow[] {
+  const income = inputs.dependableMonthlyIncomeMinorUnits;
+
+  const runwayValue = inputs.runwayStatus === "not_depleting" ? null : inputs.runwayMonths;
+  const runwayStatus: BenchmarkStatus = inputs.runwayStatus === "not_depleting" ? "above_range" : classifyAgainstRange(runwayValue, 3, 6);
+  const runwayDisplay = inputs.runwayStatus === "not_depleting" ? "Not depleting (reserves cover current burn indefinitely)" : runwayValue !== null ? `${runwayValue.toFixed(1)} months` : "—";
+
+  const dtiValue = income > 0 ? (inputs.combinedMonthlyDebtPaymentMinorUnits / income) * 100 : null;
+  const dtiDisplay = dtiValue !== null ? `${dtiValue.toFixed(1)}%` : "No dependable income on record";
+
+  // Savings rate = (income − essential expenses − debt service) ÷
+  // income. "Debt service" reuses the SAME totalEmiMinorUnits Financial
+  // Foundation's own runway calculation already uses — not a separate
+  // debt figure — consistent with runway's own definition of what's
+  // committed monthly.
+  const savingsValue = income > 0 ? ((income - inputs.essentialMonthlyExpensesMinorUnits - inputs.totalEmiMinorUnits) / income) * 100 : null;
+  const savingsDisplay = savingsValue !== null ? `${savingsValue.toFixed(1)}%` : "No dependable income on record";
+
+  // Housing burden — genuinely not derivable: Financial Foundation's
+  // expenses table has no housing/rent category field (just a free-text
+  // label and an essential/flexible classification), so there is no
+  // reliable existing value to compose here without guessing which
+  // expense labels mean "housing". insufficient_data is the honest
+  // answer, not a keyword-matching guess dressed up as real data.
+  const housingDisplay = "Not available — Financial Foundation doesn't track a housing/rent expense category yet";
+
+  // Life cover multiple — ALWAYS context_dependent, never numerically
+  // judged, matching the exact caution Insurance, Protection & Financial
+  // Rights already applies to its own adequacy check (a formula-based
+  // gap is reported as a fact, never labeled "enough"/"not enough").
+  const annualIncome = income * 12;
+  const lifeCoverValue = annualIncome > 0 ? inputs.totalLifeCoverageMinorUnits / annualIncome : null;
+  const lifeCoverDisplay = lifeCoverValue !== null ? `${lifeCoverValue.toFixed(1)}×` : "No dependable income on record";
+
+  return [
+    {
+      metric: "runway",
+      label: "Emergency runway",
+      yourHouseholdDisplay: runwayDisplay,
+      yourHouseholdRaw: runwayValue,
+      referenceRangeDisplay: "3–6 months",
+      status: runwayStatus,
+      sourceNote: "Common financial-planning heuristic for an emergency fund, not an official standard.",
+    },
+    {
+      metric: "dti",
+      label: "Debt-to-income ratio",
+      yourHouseholdDisplay: dtiDisplay,
+      yourHouseholdRaw: dtiValue,
+      referenceRangeDisplay: "Below 36%",
+      status: classifyAgainstRange(dtiValue, null, 36),
+      sourceNote: "Common lending convention (e.g. mortgage underwriting), not an official or India-specific standard.",
+    },
+    {
+      metric: "savingsRate",
+      label: "Savings rate",
+      yourHouseholdDisplay: savingsDisplay,
+      yourHouseholdRaw: savingsValue,
+      referenceRangeDisplay: "Around 20%",
+      status: classifyAgainstRange(savingsValue, 15, 25),
+      sourceNote: "Common financial-planning heuristic (e.g. the 50/30/20 guideline), not an official standard.",
+    },
+    {
+      metric: "housingBurden",
+      label: "Housing burden",
+      yourHouseholdDisplay: housingDisplay,
+      yourHouseholdRaw: null,
+      referenceRangeDisplay: "Below 30%",
+      status: "insufficient_data",
+      sourceNote: "Common financial-planning heuristic (e.g. the 28/36 rule), not an official standard.",
+    },
+    {
+      metric: "lifeCoverMultiple",
+      label: "Life insurance cover multiple",
+      yourHouseholdDisplay: lifeCoverDisplay,
+      yourHouseholdRaw: lifeCoverValue,
+      referenceRangeDisplay: "10–15×",
+      status: "context_dependent",
+      sourceNote: "Common financial-planning heuristic — actual need depends on dependents, debts, and goals; same caution Insurance, Protection & Financial Rights applies to its own adequacy check.",
+    },
+  ];
+}
+
+// A plain query — fully reactive by construction (every table/query it
+// transitively reads, Convex automatically re-subscribes to), no
+// stateRevision bookkeeping needed since there's no caching or AI
+// narration in this panel to invalidate.
+export const getBenchmarkComparison = query({
+  args: { now: v.number() },
+  returns: v.array(v.any()),
+  handler: async (ctx, args): Promise<BenchmarkRow[]> => {
+    const membership = await requireMembership(ctx);
+    const [runwayResult, debtOverview, policies]: [unknown, unknown, Doc<"insurancePolicies">[]] = await Promise.all([
+      ctx.runQuery(api.runway.calculateRunway, { now: args.now }),
+      ctx.runQuery(api.loanDebt.getDebtOverview, { now: args.now }),
+      ctx.db.query("insurancePolicies").withIndex("by_household", (q) => q.eq("householdId", membership.householdId)).take(1000),
+    ]);
+    const rw = runwayResult as {
+      status: "not_depleting" | "depleting";
+      runwayMonths: number | null;
+      dependableMonthlyIncomeMinorUnits: number;
+      essentialMonthlyExpensesMinorUnits: number;
+      totalEmiMinorUnits: number;
+    };
+    const debt = debtOverview as { combinedMonthlyPaymentMinorUnits: number };
+    const totalLifeCoverageMinorUnits = policies.filter((p) => p.type === "life").reduce((s, p) => s + p.coverageAmountMinorUnits, 0);
+
+    return buildBenchmarkRows({
+      runwayStatus: rw.status,
+      runwayMonths: rw.runwayMonths,
+      dependableMonthlyIncomeMinorUnits: rw.dependableMonthlyIncomeMinorUnits,
+      essentialMonthlyExpensesMinorUnits: rw.essentialMonthlyExpensesMinorUnits,
+      totalEmiMinorUnits: rw.totalEmiMinorUnits,
+      combinedMonthlyDebtPaymentMinorUnits: debt.combinedMonthlyPaymentMinorUnits,
+      totalLifeCoverageMinorUnits,
+    });
+  },
+});
+
+// =====================================================================
+// Part 2: mutation -> impact summary -> AgentMail. Triggered by
+// Financial Foundation's income-update mutation (see convex/
+// incomeSources.ts's updateIncomeSource, which schedules
+// sendImpactSummaryInternal via ctx.scheduler.runAfter — async,
+// non-blocking, the same "schedule an action from a mutation" pattern
+// convex/email.ts already established for AgentMail's inbound path,
+// since mutations can't call actions directly).
+// =====================================================================
+
+// Raw data + benchmark classification for one household, optionally
+// with ONE income source's amount overridden — used to compute a real
+// "before" scenario. The mutation has already committed by the time
+// this runs, so "before" can't be re-read from the DB; the caller
+// captures the pre-mutation amount at the exact moment of the write and
+// passes it through explicitly. Reuses gatherResilienceDataInternal
+// (the SAME gather function checkIncomeResilience/the cron sweep use)
+// and buildBenchmarkRows (the SAME classification Part 1's live query
+// uses) — not a parallel data-gathering or scoring system.
+async function computeImpactSnapshot(
+  ctx: { runQuery: Function },
+  householdId: Id<"households">,
+  now: number,
+  override?: { incomeSourceId: Id<"incomeSources">; amountMinorUnits: number },
+): Promise<{ rows: BenchmarkRow[]; activeGoalCount: number; monthlyNetGapMinorUnits: number }> {
+  const data = (await ctx.runQuery(internal.incomeResilience.gatherResilienceDataInternal, { householdId })) as {
+    incomeSources: Doc<"incomeSources">[];
+    expenses: Doc<"expenses">[];
+    obligations: Doc<"obligations">[];
+    assets: Doc<"assets">[];
+    insurancePolicies: Doc<"insurancePolicies">[];
+  };
+  const incomeSources = override
+    ? data.incomeSources.map((s) => (s._id === override.incomeSourceId ? { ...s, amountMinorUnits: override.amountMinorUnits } : s))
+    : data.incomeSources;
+
+  const dependableMonthlyIncomeMinorUnits = incomeSources
+    .filter((s) => s.reliability === "dependable" && s.activeFrom <= now && (s.activeTo === undefined || s.activeTo > now))
+    .reduce((sum, s) => sum + (monthlyEquivalent(s.amountMinorUnits, s.cadence as "monthly" | "weekly" | "annual" | "irregular") ?? 0), 0);
+
+  const essentialMonthlyExpensesMinorUnits = data.expenses
+    .filter((e) => e.classification === "essential")
+    .reduce((sum, e) => sum + (monthlyEquivalent(e.amountMinorUnits, e.recurrence === "oneOff" ? "irregular" : e.recurrence) ?? 0), 0);
+
+  const totalEmiMinorUnits = data.obligations.reduce((s, o) => s + o.emiMinorUnits, 0);
+  const combinedMonthlyDebtPaymentMinorUnits = data.obligations.reduce((s, o) => s + (o.minimumPaymentMinorUnits ?? o.emiMinorUnits), 0);
+  const totalLifeCoverageMinorUnits = data.insurancePolicies.filter((p) => p.type === "life").reduce((s, p) => s + p.coverageAmountMinorUnits, 0);
+  const unrestrictedLiquidSavingsMinorUnits = data.assets.filter((a) => a.liquidity === "liquid" && a.earmarkedForGoalId === undefined).reduce((s, a) => s + a.valueMinorUnits, 0);
+
+  const monthlyNetGapMinorUnits = essentialMonthlyExpensesMinorUnits + totalEmiMinorUnits - dependableMonthlyIncomeMinorUnits;
+  const runwayStatus: "not_depleting" | "depleting" = monthlyNetGapMinorUnits > 0 ? "depleting" : "not_depleting";
+  const runwayMonths = monthlyNetGapMinorUnits > 0 ? unrestrictedLiquidSavingsMinorUnits / monthlyNetGapMinorUnits : null;
+
+  // Goal exposure — same confirmed-timeline + active-goal filter Loan &
+  // Debt's own gatherAffordabilityData already uses, not a new
+  // definition of "affects goals".
+  const [timelines, goals] = await Promise.all([
+    (ctx as unknown as { runQuery: (ref: unknown, args: unknown) => Promise<unknown> }).runQuery(internal.incomeResilience.listTimelinesInternal, { householdId }) as Promise<Doc<"timelines">[]>,
+    (ctx as unknown as { runQuery: (ref: unknown, args: unknown) => Promise<unknown> }).runQuery(internal.incomeResilience.listGoalsInternal, { householdId }) as Promise<Doc<"goals">[]>,
+  ]);
+  const confirmedTimelineIds = new Set(timelines.filter((t) => t.confirmed === true).map((t) => t._id));
+  const activeGoalCount = goals.filter((g) => g.status === "active" && g.timelineId !== undefined && confirmedTimelineIds.has(g.timelineId)).length;
+
+  const rows = buildBenchmarkRows({
+    runwayStatus,
+    runwayMonths,
+    dependableMonthlyIncomeMinorUnits,
+    essentialMonthlyExpensesMinorUnits,
+    totalEmiMinorUnits,
+    combinedMonthlyDebtPaymentMinorUnits,
+    totalLifeCoverageMinorUnits,
+  });
+
+  return { rows, activeGoalCount, monthlyNetGapMinorUnits };
+}
+
+export const listTimelinesInternal = internalQuery({
+  args: { householdId: v.id("households") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => await ctx.db.query("timelines").withIndex("by_household", (q) => q.eq("householdId", args.householdId)).take(500),
+});
+
+export const listGoalsInternal = internalQuery({
+  args: { householdId: v.id("households") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => await ctx.db.query("goals").withIndex("by_household", (q) => q.eq("householdId", args.householdId)).take(500),
+});
+
+type ImpactAffectedEntry = { service: string; before: string; after: string };
+
+function goalFeasibilityLabel(activeGoalCount: number, monthlyNetGapMinorUnits: number): string {
+  if (activeGoalCount === 0) return "no active goals in a confirmed timeline";
+  return monthlyNetGapMinorUnits > 0 ? `at risk — ${activeGoalCount} active goal(s) competing for a deficit budget` : `on track — ${activeGoalCount} active goal(s), no structural deficit`;
+}
+
+function diffBenchmarkRows(before: BenchmarkRow[], after: BenchmarkRow[]): ImpactAffectedEntry[] {
+  const out: ImpactAffectedEntry[] = [];
+  for (let i = 0; i < before.length; i++) {
+    const b = before[i];
+    const a = after[i];
+    // Only a genuine STATUS-class change counts here (within_range ->
+    // above_range etc.) — a small numeric wobble that stays in the same
+    // class is deliberately NOT reported as "affected", to avoid an
+    // over-inclusive list every time any number moves at all.
+    if (b.status !== a.status) {
+      out.push({ service: `benchmark_${b.metric}`, before: `${b.yourHouseholdDisplay} (${b.status})`, after: `${a.yourHouseholdDisplay} (${a.status})` });
+    }
+  }
+  return out;
+}
+
+const IMPACT_NARRATION_SYSTEM = `You explain an ALREADY-COMPUTED household financial impact summary in plain language for an email. You are given the field that changed, its before/after value, and a list of specific affected services with their own before/after values — all FINAL, already decided, never yours to recompute or contradict. Return ONLY JSON: { "headline": string, "plainLanguage": string }. Reference only the specific services and figures given. NEVER invent a number not present in the data. NEVER give financial advice or tell the household what to do — describe what changed and point them to the relevant FinComp section to explore further. NEVER state a specific date, year, deadline, or cutoff not explicitly present in the given detail.`;
+
+async function narrateImpact(summary: {
+  changedField: string;
+  incomeLabel: string;
+  beforeMinorUnits: number;
+  afterMinorUnits: number;
+  affected: ImpactAffectedEntry[];
+}): Promise<{ headline: string; plainLanguage: string }> {
+  const parsed = await chatJson(IMPACT_NARRATION_SYSTEM, JSON.stringify(summary));
+  return {
+    headline: typeof parsed.headline === "string" && parsed.headline ? parsed.headline : "Your FinComp household state changed",
+    plainLanguage: typeof parsed.plainLanguage === "string" ? parsed.plainLanguage : "",
+  };
+}
+
+export const getHouseholdRevisionInternal = internalQuery({
+  args: { householdId: v.id("households") },
+  returns: v.union(v.null(), v.number()),
+  handler: async (ctx, args) => {
+    const h = await ctx.db.get("households", args.householdId);
+    return h?.stateRevision ?? null;
+  },
+});
+
+export const sendImpactSummaryInternal = internalAction({
+  args: {
+    householdId: v.id("households"),
+    incomeSourceId: v.id("incomeSources"),
+    incomeLabel: v.string(),
+    beforeAmountMinorUnits: v.number(),
+    afterAmountMinorUnits: v.number(),
+  },
+  returns: v.object({ sent: v.boolean(), reason: v.string(), outboundId: v.optional(v.string()), affectedCount: v.number() }),
+  handler: async (ctx, args) => {
+    if (args.beforeAmountMinorUnits === args.afterAmountMinorUnits) {
+      return { sent: false, reason: "No change in amount — nothing to summarize.", affectedCount: 0 };
+    }
+    const now = Date.now();
+    const before = await computeImpactSnapshot(ctx, args.householdId, now, { incomeSourceId: args.incomeSourceId, amountMinorUnits: args.beforeAmountMinorUnits });
+    const after = await computeImpactSnapshot(ctx, args.householdId, now); // real current DB state — already reflects the committed mutation
+
+    const affected: ImpactAffectedEntry[] = [];
+    const beforeByMetric = new Map(before.rows.map((r) => [r.metric, r]));
+    const afterByMetric = new Map(after.rows.map((r) => [r.metric, r]));
+    const runwayBefore = beforeByMetric.get("runway")!;
+    const runwayAfter = afterByMetric.get("runway")!;
+    if (runwayBefore.yourHouseholdDisplay !== runwayAfter.yourHouseholdDisplay) affected.push({ service: "runway", before: runwayBefore.yourHouseholdDisplay, after: runwayAfter.yourHouseholdDisplay });
+    const dtiBefore = beforeByMetric.get("dti")!;
+    const dtiAfter = afterByMetric.get("dti")!;
+    if (dtiBefore.yourHouseholdDisplay !== dtiAfter.yourHouseholdDisplay) affected.push({ service: "debt_burden", before: dtiBefore.yourHouseholdDisplay, after: dtiAfter.yourHouseholdDisplay });
+    const savingsBefore = beforeByMetric.get("savingsRate")!;
+    const savingsAfter = afterByMetric.get("savingsRate")!;
+    if (savingsBefore.yourHouseholdDisplay !== savingsAfter.yourHouseholdDisplay) affected.push({ service: "savings_rate", before: savingsBefore.yourHouseholdDisplay, after: savingsAfter.yourHouseholdDisplay });
+    const goalBefore = goalFeasibilityLabel(before.activeGoalCount, before.monthlyNetGapMinorUnits);
+    const goalAfter = goalFeasibilityLabel(after.activeGoalCount, after.monthlyNetGapMinorUnits);
+    if (goalBefore !== goalAfter) affected.push({ service: "goal_feasibility", before: goalBefore, after: goalAfter });
+    affected.push(...diffBenchmarkRows(before.rows, after.rows));
+
+    if (affected.length === 0) return { sent: false, reason: "No detected change in any affected service.", affectedCount: 0 };
+
+    const summary = {
+      changedField: "income",
+      incomeLabel: args.incomeLabel,
+      beforeMinorUnits: args.beforeAmountMinorUnits,
+      afterMinorUnits: args.afterAmountMinorUnits,
+      affected,
+    };
+    const narration = await narrateImpact(summary);
+
+    const toEmail = (await ctx.runQuery(internal.incomeResilience.getHouseholdEmailInternal, { householdId: args.householdId })) as string | null;
+    if (!toEmail) return { sent: false, reason: "No email address is on file for this household.", affectedCount: affected.length };
+    const inboxId = process.env.AGENTMAIL_SENDER_INBOX_ID;
+    if (!inboxId) return { sent: false, reason: "AGENTMAIL_SENDER_INBOX_ID is not set on this deployment.", affectedCount: affected.length };
+
+    const revision = (await ctx.runQuery(internal.incomeResilience.getHouseholdRevisionInternal, { householdId: args.householdId })) as number | null;
+    const lines = [
+      narration.headline,
+      "",
+      narration.plainLanguage,
+      "",
+      `"${args.incomeLabel}" changed from ${rupees(args.beforeAmountMinorUnits)} to ${rupees(args.afterAmountMinorUnits)}.`,
+      "",
+      "What this affected:",
+      ...affected.map((a) => `  • ${a.service}: ${a.before} → ${a.after}`),
+      "",
+      `Household state revision: ${revision ?? "unknown"}`,
+      `Generated: ${new Date(now).toISOString()}`,
+      "",
+      "This is a starting point to explore in the relevant FinComp section, not a financial plan.",
+      "— Sent from FinComp, automatically, because a real change affected your household state.",
+    ];
+    try {
+      const outboundId = await agentmailSender.sendMessage(ctx as unknown as Parameters<typeof agentmailSender.sendMessage>[0], inboxId, {
+        to: toEmail,
+        subject: "Your FinComp household state changed.",
+        text: lines.join("\n"),
+      });
+      return { sent: true, reason: `Queued for delivery to ${toEmail}.`, outboundId, affectedCount: affected.length };
+    } catch (err) {
+      return { sent: false, reason: err instanceof Error ? err.message : String(err), affectedCount: affected.length };
+    }
+  },
+});
+
 // Human consult ("Want a real person's opinion?") reuses the generic
 // convex/humanConsult.ts mutation — called from the frontend with
 // sourceService: "incomeResilience".
-
-void rupees; // reserved for frontend-facing formatting reuse; kept here to match every other service's helper placement

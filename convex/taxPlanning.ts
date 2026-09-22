@@ -35,6 +35,7 @@ import { requireMembership, assertIntegerMinorUnits, bumpStateRevision } from ".
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { AgentMail } from "@agentmail/convex";
 import { lookupTaxSlab, getCurrentTaxSlabs, type TaxSlab } from "./taxBracket"; // REUSED FROM taxBracket.ts
+import { resolveCountry, nonIndiaJurisdictionCaveat } from "./jurisdiction";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -372,6 +373,7 @@ export const gatherDeductionInputData = internalQuery({
     return {
       householdId,
       stateRevision: household?.stateRevision ?? 0,
+      country: household?.country ?? null,
       employmentType: profile?.employmentType ?? null,
       hraClaimedMinorUnits: profile?.hraClaimedMinorUnits ?? 0,
       approximate80CInvestmentMinorUnits: profile?.approximate80CInvestmentMinorUnits ?? 0,
@@ -436,6 +438,7 @@ export const checkTaxDeductionSummary = action({
     const data = (await ctx.runQuery(internal.taxPlanning.gatherDeductionInputData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       employmentType: "salaried" | "selfEmployed" | null;
       hraClaimedMinorUnits: number;
       approximate80CInvestmentMinorUnits: number;
@@ -444,6 +447,7 @@ export const checkTaxDeductionSummary = action({
       lifePremiumTotalMinorUnits: number;
       hasProfile: boolean;
     };
+    const jurisdictionCaveat = nonIndiaJurisdictionCaveat(resolveCountry(data.country), "Income Tax Department (incometax.gov.in)");
 
     const lawResult = await getDeductionsAndOldSlabs(ctx as never);
     if (!lawResult.ok) return { state: "SOURCE_UNAVAILABLE", reason: lawResult.reason };
@@ -490,6 +494,7 @@ Hard rules:
       plainLanguage: typeof parsed.plainLanguage === "string" ? parsed.plainLanguage : "",
       caveats: Array.isArray(parsed.caveats) ? parsed.caveats.filter((x): x is string => typeof x === "string") : [],
     };
+    if (jurisdictionCaveat) narration.caveats = [...narration.caveats, jurisdictionCaveat];
 
     if (cached) {
       const c = cached as { _id: Id<"taxDeductionSummaries"> } & Record<string, unknown>;
@@ -572,6 +577,7 @@ export const checkTaxRegimeComparison = action({
     const data = (await ctx.runQuery(internal.taxPlanning.gatherDeductionInputData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       employmentType: "salaried" | "selfEmployed" | null;
       hraClaimedMinorUnits: number;
       approximate80CInvestmentMinorUnits: number;
@@ -580,6 +586,7 @@ export const checkTaxRegimeComparison = action({
       lifePremiumTotalMinorUnits: number;
       hasProfile: boolean;
     };
+    const jurisdictionCaveat = nonIndiaJurisdictionCaveat(resolveCountry(data.country), "Income Tax Department (incometax.gov.in)");
     if (data.employmentType === null) {
       return { state: "INSUFFICIENT_DATA", reason: "No tax profile is set yet — add one to compare regimes." };
     }
@@ -602,7 +609,13 @@ export const checkTaxRegimeComparison = action({
 
     const inputHash = stableHash({ employmentType: data.employmentType, grossAnnualIncomeMinorUnits, hra: data.hraClaimedMinorUnits, c80: data.approximate80CInvestmentMinorUnits, loan: data.homeLoanInterestEstimateMinorUnits, health: data.healthPremiumTotalMinorUnits, life: data.lifePremiumTotalMinorUnits });
     const cached = await ctx.runQuery(internal.taxPlanning.findCachedRegimeComparison, { householdId: data.householdId, inputHash, stateRevision: data.stateRevision });
-    if (cached) return { state: "COMPUTED", ...(cached as object), _fromCache: true };
+    if (cached) {
+      const c = cached as { narration?: { caveats?: string[] } } & Record<string, unknown>;
+      const cachedNarration = jurisdictionCaveat && c.narration
+        ? { ...c.narration, caveats: [...(c.narration.caveats ?? []), jurisdictionCaveat] }
+        : c.narration;
+      return { state: "COMPUTED", ...c, narration: cachedNarration, _fromCache: true };
+    }
 
     const diag = diagnoseDeductionSummary({
       employmentType: data.employmentType,
@@ -665,7 +678,8 @@ Hard rules:
       caveats: Array.isArray(parsed.caveats) ? parsed.caveats.filter((x): x is string => typeof x === "string") : [],
     };
     const id = await ctx.runMutation(internal.taxPlanning.saveRegimeComparison, { householdId: data.householdId, ...persisted, narration, inputHash, inputStateRevision: data.stateRevision });
-    return { state: "COMPUTED", comparisonId: id, ...persisted, ...extras, narration, _fromCache: false };
+    const narrationForCaller = jurisdictionCaveat ? { ...narration, caveats: [...narration.caveats, jurisdictionCaveat] } : narration;
+    return { state: "COMPUTED", comparisonId: id, ...persisted, ...extras, narration: narrationForCaller, _fromCache: false };
   },
 });
 
@@ -742,11 +756,13 @@ export const checkTaxDeductionGaps = action({
     const data = (await ctx.runQuery(internal.taxPlanning.gatherDeductionInputData, {})) as {
       householdId: Id<"households">;
       stateRevision: number;
+      country: string | null;
       hasProfile: boolean;
       healthPremiumTotalMinorUnits: number;
       lifePremiumTotalMinorUnits: number;
       approximate80CInvestmentMinorUnits: number;
     };
+    const jurisdictionCaveat = nonIndiaJurisdictionCaveat(resolveCountry(data.country), "Income Tax Department (incometax.gov.in)");
     const lawResult = await getDeductionsAndOldSlabs(ctx as never);
     if (!lawResult.ok) return { state: "SOURCE_UNAVAILABLE", reason: lawResult.reason };
 
@@ -755,7 +771,8 @@ export const checkTaxDeductionGaps = action({
     const cached = await ctx.runQuery(internal.taxPlanning.findCachedDeductionGaps, { householdId: data.householdId, stateRevision: data.stateRevision });
     if (cached) {
       const c = cached as { _id: Id<"taxDeductionGaps">; narration: { headline: string; plainLanguage: string; caveats: string[] } };
-      return { state: "COMPUTED", gapsId: c._id, gaps, narration: c.narration, _fromCache: true };
+      const cachedNarration = jurisdictionCaveat ? { ...c.narration, caveats: [...c.narration.caveats, jurisdictionCaveat] } : c.narration;
+      return { state: "COMPUTED", gapsId: c._id, gaps, narration: cachedNarration, _fromCache: true };
     }
 
     const system = `You put an ALREADY-DETECTED list of tax-deduction gaps into plain language for an Indian household. You are given an array of gaps, each with a gapType, a plain description, and an optional estimatedMissedDeductionMinorUnits. If the array is empty, no gaps were found. Return ONLY JSON: { "headline": string, "plainLanguage": string, "caveats": string[] }.
@@ -772,7 +789,8 @@ Hard rules:
       caveats: Array.isArray(parsed.caveats) ? parsed.caveats.filter((x): x is string => typeof x === "string") : [],
     };
     const id = await ctx.runMutation(internal.taxPlanning.saveDeductionGaps, { householdId: data.householdId, gaps, narration, inputStateRevision: data.stateRevision });
-    return { state: "COMPUTED", gapsId: id, gaps, narration, _fromCache: false };
+    const narrationForCaller = jurisdictionCaveat ? { ...narration, caveats: [...narration.caveats, jurisdictionCaveat] } : narration;
+    return { state: "COMPUTED", gapsId: id, gaps, narration: narrationForCaller, _fromCache: false };
   },
 });
 
