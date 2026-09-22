@@ -3,6 +3,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonStyle } from "../goalPlanning/kit";
+import { useCurrency } from "../../lib/currency";
 
 // =====================================================================
 // Investment & Risk Planning. This service NEVER recommends a specific
@@ -12,9 +13,6 @@ import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonSt
 // non-product asset-category education. Every number rendered here
 // comes straight off a real backend response.
 // =====================================================================
-
-const rupee = (minor: number | null | undefined) =>
-  minor === null || minor === undefined ? "—" : `₹${Math.round(minor).toLocaleString("en-IN")}`;
 
 const dayMonth = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
@@ -312,6 +310,7 @@ function ReadinessResult({
   onBack: () => void;
   householdId: string;
 }) {
+  const { format } = useCurrency();
   const r = bundle.result;
   if (!r) return <Card>Something went wrong generating this result.</Card>;
   const badge = READINESS_BADGE[r.readinessState] ?? r.readinessState;
@@ -338,16 +337,16 @@ function ReadinessResult({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
-        <StatCard label="Investable surplus" value={rupee(r.investableSurplusMinorUnits)} />
-        <StatCard label="Liquid reserve" value={rupee(r.eligibleLiquidReserveMinorUnits)} />
-        <StatCard label="Reserve target" value={rupee(r.emergencyReserveTargetMinorUnits)} />
+        <StatCard label="Investable surplus" value={format(r.investableSurplusMinorUnits)} />
+        <StatCard label="Liquid reserve" value={format(r.eligibleLiquidReserveMinorUnits)} />
+        <StatCard label="Reserve target" value={format(r.emergencyReserveTargetMinorUnits)} />
       </div>
 
       <CollapsibleSection title="How this was calculated" defaultOpen>
-        <LineItem label="Eligible liquid reserve" value={rupee(r.eligibleLiquidReserveMinorUnits)} />
-        <LineItem label="− Emergency reserve target" value={rupee(r.emergencyReserveTargetMinorUnits)} />
-        <LineItem label="− Earmarked for goals" value={rupee(r.earmarkedForGoalsMinorUnits)} />
-        <LineItem label="= Investable surplus" value={rupee(r.investableSurplusMinorUnits)} bold />
+        <LineItem label="Eligible liquid reserve" value={format(r.eligibleLiquidReserveMinorUnits)} />
+        <LineItem label="− Emergency reserve target" value={format(r.emergencyReserveTargetMinorUnits)} />
+        <LineItem label="− Earmarked for goals" value={format(r.earmarkedForGoalsMinorUnits)} />
+        <LineItem label="= Investable surplus" value={format(r.investableSurplusMinorUnits)} bold />
         {r.calculationExplanation && (
           <p style={{ fontSize: "12.5px", color: colors.inkSoft, marginTop: "10px", fontStyle: "italic" }}>{r.calculationExplanation}</p>
         )}
@@ -425,6 +424,7 @@ function ScenarioResult({
   onBack: () => void;
   householdId: string;
 }) {
+  const { format } = useCurrency();
   const r = bundle.result;
   if (r?.needsInput) {
     return (
@@ -463,12 +463,12 @@ function ScenarioResult({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px" }}>
-        <StatCard label="Projected range — low" value={rupee(r.projectedRangeLowMinorUnits)} />
-        <StatCard label="Projected range — high" value={rupee(r.projectedRangeHighMinorUnits)} />
+        <StatCard label="Projected range — low" value={format(r.projectedRangeLowMinorUnits)} />
+        <StatCard label="Projected range — high" value={format(r.projectedRangeHighMinorUnits)} />
       </div>
 
       <CollapsibleSection title="How this was calculated" defaultOpen>
-        <LineItem label="Monthly contribution" value={rupee(r.monthlyContributionMinorUnits)} />
+        <LineItem label="Monthly contribution" value={format(r.monthlyContributionMinorUnits)} />
         <LineItem label="Horizon" value={`${r.horizonYears} years`} />
         <LineItem label="Assumed annual return range" value={`${r.assumedAnnualReturnRangeLow}%–${r.assumedAnnualReturnRangeHigh}%`} />
         <p style={{ fontSize: "12.5px", color: colors.inkSoft, marginTop: "10px", fontStyle: "italic" }}>{r.assumptionSourceNote}</p>
@@ -524,6 +524,7 @@ function TaxResult({
   onBack: () => void;
   householdId: string;
 }) {
+  const { format } = useCurrency();
   const r = bundle.result;
   if (!r || r.state !== "COMPUTED") {
     return (
@@ -553,7 +554,7 @@ function TaxResult({
         <div style={{ fontSize: "15px", lineHeight: 1.4 }}>{r.narration.headline}</div>
       </div>
       <Card>
-        <LineItem label="Dependable annual income" value={rupee(r.annualIncomeMinorUnits)} />
+        <LineItem label="Dependable annual income" value={format(r.annualIncomeMinorUnits)} />
         <LineItem label="Estimated slab" value={`${r.estimatedSlabLabel} (${r.ratePercent}%)`} bold />
         <p style={{ fontSize: "13px", margin: "10px 0 0" }}>{r.narration.plainLanguage}</p>
         <div style={{ fontSize: "11px", color: colors.inkSoft, marginTop: "8px" }}>

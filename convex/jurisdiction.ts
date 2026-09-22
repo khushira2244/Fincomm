@@ -74,6 +74,29 @@ export function resolveCountry(raw: string | null | undefined): Country {
   return DEFAULT_COUNTRY;
 }
 
+// Currency is derived from the household's own country, set once at
+// signup — never asked separately, and never re-derived per screen.
+// This is display formatting only: every dollar/rupee/euro figure in
+// this app is stored as a plain integer "minor unit" (the smallest
+// whole unit of that currency, e.g. paise/cents), and every deterministic
+// calculation is currency-agnostic arithmetic on that integer — only how
+// it's PRINTED changes per country.
+export type CurrencyInfo = { code: string; symbol: string; locale: string };
+
+export const CURRENCY_BY_COUNTRY: Record<Country, CurrencyInfo> = {
+  IN: { code: "INR", symbol: "₹", locale: "en-IN" },
+  US: { code: "USD", symbol: "$", locale: "en-US" },
+  EU: { code: "EUR", symbol: "€", locale: "de-DE" },
+  // No real per-country currency mapping exists for "Other" — USD is
+  // the most broadly legible fallback, not a claim about the
+  // household's actual currency.
+  OTHER: { code: "USD", symbol: "$", locale: "en-US" },
+};
+
+export function currencyForCountry(country: Country): CurrencyInfo {
+  return CURRENCY_BY_COUNTRY[country];
+}
+
 // Tax Planning / Insurance / Investment are India-specific (their real,
 // verified sources are incometax.gov.in, IRDAI, and SEBI respectively)
 // and are not being rebuilt per-country. Returns a caveat string to

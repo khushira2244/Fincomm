@@ -20,6 +20,7 @@ import { TaxPlanningScreen } from "./components/tax/TaxPlanningScreen";
 import { GovernmentEconomicScreen } from "./components/governmentEconomic/GovernmentEconomicScreen";
 import { IncomeResilienceScreen } from "./components/incomeResilience/IncomeResilienceScreen";
 import { colors, fontSans } from "./theme";
+import { CurrencyProvider } from "./lib/currency";
 
 // FinComp — see the components/ folder for each piece. Financial
 // Foundation's own files (screens, mutations, queries, runway) are
@@ -35,7 +36,9 @@ export default function App() {
         <AuthScreen />
       </Unauthenticated>
       <Authenticated>
-        <AuthenticatedApp />
+        <CurrencyProvider>
+          <AuthenticatedApp />
+        </CurrencyProvider>
       </Authenticated>
     </div>
   );

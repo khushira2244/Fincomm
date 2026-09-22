@@ -3,6 +3,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonStyle } from "../goalPlanning/kit";
+import { useCurrency } from "../../lib/currency";
 
 // =====================================================================
 // Insurance, Protection & Financial Rights. This service explains
@@ -12,9 +13,6 @@ import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonSt
 // is never something this service says. Every number rendered here
 // comes straight off a real backend response.
 // =====================================================================
-
-const rupee = (minor: number | null | undefined) =>
-  minor === null || minor === undefined ? "—" : `₹${Math.round(minor).toLocaleString("en-IN")}`;
 
 const dayMonth = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
@@ -371,6 +369,7 @@ function ActionRow({
 // =====================================================================
 
 function AdequacyResult({ bundle, onAskAgain, householdId }: { bundle: ResultBundle; onAskAgain: (bundle: ResultBundle) => void; householdId: string }) {
+  const { format } = useCurrency();
   const r = bundle.result;
   if (!r) return <Card>Something went wrong generating this result.</Card>;
 
@@ -385,25 +384,25 @@ function AdequacyResult({ bundle, onAskAgain, householdId }: { bundle: ResultBun
       <VerdictBanner tone={isAmber ? "amber" : "green"} badge={badge} headline={r.narration.headline} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
-        <StatCard label="Current life cover" value={rupee(effectiveLifeCover)} />
-        <StatCard label="Estimated need" value={rupee(r.estimatedLifeCoverNeededMinorUnits)} />
-        <StatCard label={r.lifeCoverageGapMinorUnits >= 0 ? "Gap" : "Surplus"} value={rupee(Math.abs(r.lifeCoverageGapMinorUnits))} />
+        <StatCard label="Current life cover" value={format(effectiveLifeCover)} />
+        <StatCard label="Estimated need" value={format(r.estimatedLifeCoverNeededMinorUnits)} />
+        <StatCard label={r.lifeCoverageGapMinorUnits >= 0 ? "Gap" : "Surplus"} value={format(Math.abs(r.lifeCoverageGapMinorUnits))} />
       </div>
 
       <CollapsibleSection title="How this was calculated" defaultOpen>
-        <LineItem label="Outstanding loan balance" value={rupee(r.outstandingLoanBalanceMinorUnits)} />
+        <LineItem label="Outstanding loan balance" value={format(r.outstandingLoanBalanceMinorUnits)} />
         <LineItem
-          label={`+ ${r.lifeIncomeReplacementYears} years × dependable annual income (${rupee(r.dependableAnnualIncomeMinorUnits)})`}
-          value={rupee(r.lifeIncomeReplacementYears * r.dependableAnnualIncomeMinorUnits)}
+          label={`+ ${r.lifeIncomeReplacementYears} years × dependable annual income (${format(r.dependableAnnualIncomeMinorUnits)})`}
+          value={format(r.lifeIncomeReplacementYears * r.dependableAnnualIncomeMinorUnits)}
         />
-        <LineItem label="= Estimated need" value={rupee(r.estimatedLifeCoverNeededMinorUnits)} bold />
+        <LineItem label="= Estimated need" value={format(r.estimatedLifeCoverNeededMinorUnits)} bold />
         <div style={{ height: "8px" }} />
-        <LineItem label="Life cover on file" value={rupee(r.totalLifeCoverageMinorUnits)} />
-        <LineItem label="+ Bundled loan-linked cover" value={rupee(r.bundledLifeCoverageMinorUnits)} />
-        <LineItem label="= Current life cover" value={rupee(effectiveLifeCover)} bold />
+        <LineItem label="Life cover on file" value={format(r.totalLifeCoverageMinorUnits)} />
+        <LineItem label="+ Bundled loan-linked cover" value={format(r.bundledLifeCoverageMinorUnits)} />
+        <LineItem label="= Current life cover" value={format(effectiveLifeCover)} bold />
         <div style={{ height: "8px" }} />
-        <LineItem label="Health cover on file" value={rupee(r.totalHealthCoverageMinorUnits)} />
-        <LineItem label="Commonly-cited minimum (household size)" value={rupee(r.healthCoverMinimumMinorUnits)} />
+        <LineItem label="Health cover on file" value={format(r.totalHealthCoverageMinorUnits)} />
+        <LineItem label="Commonly-cited minimum (household size)" value={format(r.healthCoverMinimumMinorUnits)} />
         <LineItem label="Health assessment" value={HEALTH_ASSESSMENT_LABEL[r.healthCoverageAssessment] ?? r.healthCoverageAssessment} bold />
         <p style={{ fontSize: "12.5px", color: colors.inkSoft, marginTop: "10px", fontStyle: "italic" }}>{r.narration.plainLanguage}</p>
       </CollapsibleSection>

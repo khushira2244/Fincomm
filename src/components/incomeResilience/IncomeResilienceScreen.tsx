@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import { Card, ghostButtonStyle, inputStyle, primaryButtonStyle } from "../goalPlanning/kit";
 import type { ServiceKey } from "../Sidebar";
+import { useCurrency } from "../../lib/currency";
 
 // =====================================================================
 // Income Resilience — cross-service SYNTHESIS, not a new domain.
@@ -252,6 +253,7 @@ const CONCERN_LABEL: Record<string, string> = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function DimensionBreakdown({ result, onNavigate }: { result: any; onNavigate: (key: ServiceKey) => void }) {
+  const { format } = useCurrency();
   const weakKeys = new Set((result.weakDimensions as { key: string }[]).map((d) => d.key));
   const rows: { key: string; title: string; value: string }[] = [
     { key: "incomeConcentration", title: "Income concentration", value: `${Math.round(result.incomeConcentrationPercent)}% of dependable income comes from a single source.` },
@@ -259,7 +261,7 @@ function DimensionBreakdown({ result, onNavigate }: { result: any; onNavigate: (
     { key: "runway", title: "Runway", value: result.runwayStatus === "depleting" ? `Depleting — ${result.runwayMonths.toFixed(1)} months at the current burn rate (recommended: ${result.recommendedRunwayMonths}).` : "Not currently depleting." },
     { key: "emiRatio", title: "EMI burden", value: `EMIs take up ${Math.round(result.emiToIncomeRatioPercent)}% of dependable income (flagged at 50%+).` },
     { key: "insurance", title: "Income-protection insurance", value: result.hasIncomeProtectionInsurance ? "An active life or personal-accident policy is recorded." : "No active life or personal-accident policy recorded." },
-    { key: "liquidReserve", title: "Extra liquid reserve", value: `₹${Math.round(result.liquidInvestmentsMinorUnits).toLocaleString("en-IN")} in semi-liquid assets beyond your emergency runway.` },
+    { key: "liquidReserve", title: "Extra liquid reserve", value: `${format(Math.round(result.liquidInvestmentsMinorUnits))} in semi-liquid assets beyond your emergency runway.` },
     { key: "backupIncome", title: "Backup income", value: result.hasBackupIncomeInProgress ? "An active or graduated business/side income is in progress." : "No active or graduated backup income in progress." },
     { key: "externalRisk", title: "External risk signal", value: result.hasRecentSignificantEconomicFinding ? "A real, recent significant finding was flagged on your track." : "No recent significant external finding." },
   ];

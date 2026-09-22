@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonStyle, useDraft } from "../goalPlanning/kit";
+import { useCurrency } from "../../lib/currency";
 
 // =====================================================================
 // Side-Income & Business Planning — frontend rebuild to match the 4
@@ -12,9 +13,6 @@ import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonSt
 // owns 4 internal "pages"; App.tsx just knows "sideIncome" is active,
 // same as every other service's own internal tabs/routes).
 // =====================================================================
-
-const rupee = (minor: number | null | undefined) =>
-  minor === null || minor === undefined ? "—" : `₹${Math.round(minor).toLocaleString("en-IN")}`;
 
 const FC_AMBER = "#8A6D3B";
 const FC_AMBER_BG = "#F5EBD8";
@@ -219,6 +217,7 @@ function JobPanel({
   onCombine: (entryId: Id<"sideIncomeEntries">, opportunityIds: Id<"sideIncomeOpportunities">[]) => void;
   onSingle: (entryId: Id<"sideIncomeEntries">, opportunityId?: Id<"sideIncomeOpportunities">) => void;
 }) {
+  const { format } = useCurrency();
   const typeOfWork = useDraft("sideIncome:job:typeOfWork");
   const workLocationPreference = useDraft("sideIncome:job:workLocationPreference");
   const location = useDraft("sideIncome:job:location");
@@ -430,7 +429,7 @@ function JobPanel({
       {hasSearched && (
         <Card>
           <StepHeading n={4}>
-            General ideas that fit {hoursPerWeek.value || "?"} hrs/week{target !== null && <> and {rupee(target)}/month</>}
+            General ideas that fit {hoursPerWeek.value || "?"} hrs/week{target !== null && <> and {format(target)}/month</>}
           </StepHeading>
           {typeOfWork.value.trim() === "" && (
             <p style={{ fontSize: "12.5px", color: colors.inkSoft, marginTop: "-4px" }}>
@@ -462,7 +461,7 @@ function JobPanel({
                       {o.isRoughEstimate && <RoughEstimateBadge />}
                     </div>
                     <div style={{ fontSize: "12.5px", color: colors.inkSoft, marginTop: "2px" }}>
-                      Fits {o.fitHoursPerWeek} hrs/wk · Realistic range {rupee(o.estimateLowMinorUnits)}–{rupee(o.estimateHighMinorUnits)}/mo
+                      Fits {o.fitHoursPerWeek} hrs/wk · Realistic range {format(o.estimateLowMinorUnits)}–{format(o.estimateHighMinorUnits)}/mo
                     </div>
                     {reasoningByOpp[o._id] && (
                       <details style={{ marginTop: "6px", fontSize: "12px" }}>
@@ -478,7 +477,7 @@ function JobPanel({
 
           {fallsShort && (
             <NoticeBox>
-              These broad options may fall short of {rupee(target)}/month alone.
+              These broad options may fall short of {format(target)}/month alone.
               <div style={{ marginTop: "4px" }}>
                 Select two above to see if combining them gets you closer to your target — or tell us a specific skill you have.
               </div>
@@ -540,6 +539,7 @@ function JobPanel({
 // ---------------------------------------------------------------------
 
 function BusinessPanel({ onOpen }: { onOpen: (entryId: Id<"sideIncomeEntries">, opportunityId?: Id<"sideIncomeOpportunities">) => void }) {
+  const { format } = useCurrency();
   const ideaDescription = useDraft("sideIncome:business:ideaDescription");
   const startupCapital = useDraft("sideIncome:business:startupCapital");
   const effortHours = useDraft("sideIncome:business:effortHours");
@@ -672,7 +672,7 @@ function BusinessPanel({ onOpen }: { onOpen: (entryId: Id<"sideIncomeEntries">, 
                 <strong>This would strain your reserves.</strong> {reserveResult.conflictDetail}
               </>
             ) : (
-              <>This fits comfortably — reserve after startup capital would be {rupee(reserveResult.reserveAfterMinorUnits)}.</>
+              <>This fits comfortably — reserve after startup capital would be {format(reserveResult.reserveAfterMinorUnits)}.</>
             )}
           </div>
           <button style={{ ...primaryButtonStyle, marginTop: "12px" }} onClick={() => onOpen(entryId)}>
@@ -699,6 +699,7 @@ function CombinedPlanScreen({
   onBack: () => void;
   onOpenDeepDive: (topic: string, opportunityId: Id<"sideIncomeOpportunities">) => void;
 }) {
+  const { format } = useCurrency();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const opportunities = (useQuery(api.sideIncome.listOpportunitiesForEntry, { entryId }) as any[] | undefined)?.filter((o) =>
     opportunityIds.includes(o._id),
@@ -739,7 +740,7 @@ function CombinedPlanScreen({
             <div style={{ fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", color: colors.sageGreen }}>Combined</div>
           </div>
           <Stat label="Total time" value={`${plan.totalHoursPerWeek} hrs/wk`} light />
-          <Stat label="Total monthly range" value={`${rupee(plan.totalIncomeLowMinorUnits)}–${rupee(plan.totalIncomeHighMinorUnits)}`} light />
+          <Stat label="Total monthly range" value={`${format(plan.totalIncomeLowMinorUnits)}–${format(plan.totalIncomeHighMinorUnits)}`} light />
           <Stat label="Options selected" value={String(opportunityIds.length)} light />
           {plan.hasTimeConflict && <Stat label="⚠" value="Time conflict with your available hours" light />}
           {plan.hasShortfallVsTarget && <Stat label="⚠" value="May fall short of your target" light />}
@@ -828,6 +829,7 @@ function GettingStartedScreen({
   onBack: () => void;
   onOpenDeepDive: (topic: string) => void;
 }) {
+  const { format } = useCurrency();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const entry = useQuery(api.sideIncome.getSideIncomeEntry, { entryId }) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -838,8 +840,8 @@ function GettingStartedScreen({
   const title = opportunity ? opportunity.title : entry.kind === "business" ? entry.ideaDescription : entry.typeOfWork || "Your plan";
   const subtitle =
     entry.kind === "job"
-      ? `Fits your ${entry.hoursPerWeek ?? "?"} hrs/week${opportunity ? ` · realistic range ${rupee(opportunity.estimateLowMinorUnits)}–${rupee(opportunity.estimateHighMinorUnits)}/mo` : ""}`
-      : `Startup capital ${rupee(entry.startupCapitalMinorUnits)} · ${entry.effortHoursPerWeek ?? "?"} hrs/week`;
+      ? `Fits your ${entry.hoursPerWeek ?? "?"} hrs/week${opportunity ? ` · realistic range ${format(opportunity.estimateLowMinorUnits)}–${format(opportunity.estimateHighMinorUnits)}/mo` : ""}`
+      : `Startup capital ${format(entry.startupCapitalMinorUnits)} · ${entry.effortHoursPerWeek ?? "?"} hrs/week`;
 
   return (
     <>

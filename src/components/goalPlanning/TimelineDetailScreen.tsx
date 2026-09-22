@@ -16,8 +16,7 @@ import {
   textareaStyle,
   useDraft,
 } from "./kit";
-
-const rupee = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+import { useCurrency } from "../../lib/currency";
 
 export function TimelineDetailScreen({
   householdId,
@@ -324,6 +323,7 @@ function FamilySection({
   obligations: Doc<"familyObligations">[];
   emergencyNotes: Doc<"situations">[];
 }) {
+  const { format } = useCurrency();
   const k = (field: string) => `${householdId}:${timelineId}:family:${field}`;
   const addSupport = useMutation(api.goalPlanning.addFamilySupport);
   const addObligation = useMutation(api.goalPlanning.addFamilyObligation);
@@ -377,7 +377,7 @@ function FamilySection({
         <NoEntries />
       ) : (
         support.map((s) => (
-          <EntryRow key={s._id} label={s.label} detail={`${rupee(s.monthlyCostMinorUnits)}/mo`} />
+          <EntryRow key={s._id} label={s.label} detail={`${format(s.monthlyCostMinorUnits)}/mo`} />
         ))
       )}
       <form style={formRowStyle} onSubmit={submitSupport}>
@@ -406,7 +406,7 @@ function FamilySection({
           <EntryRow
             key={o._id}
             label={o.label}
-            detail={`${rupee(o.costPerYearMinorUnits)}/yr × ${o.forHowManyYears} yr${
+            detail={`${format(o.costPerYearMinorUnits)}/yr × ${o.forHowManyYears} yr${
               o.reason ? ` · ${o.reason}` : ""
             }`}
           />
@@ -480,6 +480,7 @@ function LoansSection({
   timelineId: Id<"timelines">;
   loans: Doc<"timelineLoans">[];
 }) {
+  const { format } = useCurrency();
   const k = (field: string) => `${householdId}:${timelineId}:loan:${field}`;
   const addLoan = useMutation(api.goalPlanning.addTimelineLoan);
   const label = useDraft(k("label"));
@@ -509,7 +510,7 @@ function LoansSection({
           <EntryRow
             key={l._id}
             label={l.label}
-            detail={`Balance ${rupee(l.outstandingBalanceMinorUnits)} · EMI ${rupee(l.emiMinorUnits)}`}
+            detail={`Balance ${format(l.outstandingBalanceMinorUnits)} · EMI ${format(l.emiMinorUnits)}`}
           />
         ))
       )}
@@ -554,6 +555,7 @@ function CareerSection({
   timelineId: Id<"timelines">;
   goals: Doc<"goals">[];
 }) {
+  const { format } = useCurrency();
   const k = (field: string) => `${householdId}:${timelineId}:career:${field}`;
   const addCareer = useMutation(api.goalPlanning.addCareerGoal);
   const role = useDraft(k("role"));
@@ -597,7 +599,7 @@ function CareerSection({
             key={g._id}
             label={g.description}
             detail={
-              g.targetAmountMinorUnits !== undefined ? `${rupee(g.targetAmountMinorUnits)}/yr` : undefined
+              g.targetAmountMinorUnits !== undefined ? `${format(g.targetAmountMinorUnits)}/yr` : undefined
             }
           />
         ))

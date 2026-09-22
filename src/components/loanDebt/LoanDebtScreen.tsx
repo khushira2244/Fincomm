@@ -4,9 +4,8 @@ import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import { ghostButtonStyle, inputStyle, linkStyle, primaryButtonStyle, useDraft } from "../goalPlanning/kit";
+import { useCurrency } from "../../lib/currency";
 
-const rupee = (minor: number | null | undefined) =>
-  minor === null || minor === undefined ? "—" : `₹${Math.round(minor).toLocaleString("en-IN")}`;
 const monthYear = (ts: number | null | undefined) =>
   ts === null || ts === undefined
     ? "—"
@@ -108,6 +107,7 @@ export function LoanDebtScreen() {
 // =====================================================================
 
 function DebtOverviewPanel() {
+  const { format } = useCurrency();
   const now = useMemo(() => Date.now(), []);
   const overview = useQuery(api.loanDebt.getDebtOverview, { now });
 
@@ -117,8 +117,8 @@ function DebtOverviewPanel() {
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <Card>
         <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
-          <Stat label="Total outstanding" value={rupee(overview.totalOutstandingMinorUnits)} />
-          <Stat label="Combined monthly payments" value={rupee(overview.combinedMonthlyPaymentMinorUnits)} />
+          <Stat label="Total outstanding" value={format(overview.totalOutstandingMinorUnits)} />
+          <Stat label="Combined monthly payments" value={format(overview.combinedMonthlyPaymentMinorUnits)} />
           <Stat label="Active debts" value={String(overview.activeDebtCount)} />
         </div>
         <Warnings items={overview.warnings} />
@@ -163,6 +163,7 @@ type DebtRow = {
 };
 
 function DebtCard({ debt }: { debt: DebtRow }) {
+  const { format } = useCurrency();
   const [editing, setEditing] = useState(false);
   return (
     <Card>
@@ -170,7 +171,7 @@ function DebtCard({ debt }: { debt: DebtRow }) {
         <div>
           <div style={{ fontWeight: 700, fontSize: "15px" }}>{debt.label}</div>
           <div style={{ fontSize: "12px", color: colors.inkSoft, marginTop: "2px" }}>
-            {rupee(debt.balanceMinorUnits)} outstanding · {rupee(debt.monthlyPaymentMinorUnits)}/mo ·{" "}
+            {format(debt.balanceMinorUnits)} outstanding · {format(debt.monthlyPaymentMinorUnits)}/mo ·{" "}
             {debt.annualRatePercent !== null ? `${debt.annualRatePercent}% p.a.` : "rate unknown"} ·{" "}
             <strong>{debt.rateType ? debt.rateType : "fixed/floating unknown"}</strong> ·{" "}
             {debt.remainingTenureMonths !== null
@@ -184,7 +185,7 @@ function DebtCard({ debt }: { debt: DebtRow }) {
           </div>
           <div style={{ fontSize: "12px", color: colors.inkSoft, marginTop: "2px" }}>
             {debt.bundledInsuranceCoverageMinorUnits !== null
-              ? `Bundled insurance covers ${rupee(debt.bundledInsuranceCoverageMinorUnits)} of the balance`
+              ? `Bundled insurance covers ${format(debt.bundledInsuranceCoverageMinorUnits)} of the balance`
               : "No bundled insurance recorded"}
           </div>
         </div>
@@ -409,6 +410,7 @@ function AffordabilityPanel() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function AffordabilityResult({ result }: { result: any }) {
+  const { format } = useCurrency();
   const d = result.deterministic;
   const rc = result.rateContext;
   const n = result.narration;
@@ -430,12 +432,12 @@ function AffordabilityResult({ result }: { result: any }) {
       </div>
 
       <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", marginBottom: "10px" }}>
-        <Stat label="Calculated EMI" value={rupee(d.emiMinorUnits)} />
-        <Stat label="Total interest" value={rupee(d.totalInterestMinorUnits)} />
-        <Stat label="Total repayment" value={rupee(d.totalRepaymentMinorUnits)} />
-        <Stat label="Upfront cash required" value={rupee(d.upfrontCashRequiredMinorUnits)} />
-        <Stat label="Monthly cash remaining" value={rupee(d.monthlyCashRemainingMinorUnits)} />
-        <Stat label="Reserve remaining" value={rupee(d.reserveRemainingMinorUnits)} />
+        <Stat label="Calculated EMI" value={format(d.emiMinorUnits)} />
+        <Stat label="Total interest" value={format(d.totalInterestMinorUnits)} />
+        <Stat label="Total repayment" value={format(d.totalRepaymentMinorUnits)} />
+        <Stat label="Upfront cash required" value={format(d.upfrontCashRequiredMinorUnits)} />
+        <Stat label="Monthly cash remaining" value={format(d.monthlyCashRemainingMinorUnits)} />
+        <Stat label="Reserve remaining" value={format(d.reserveRemainingMinorUnits)} />
         <Stat label="Closes on" value={monthYear(d.closureDate)} />
         <Stat label="Rate type" value={d.rateType} />
       </div>
@@ -620,6 +622,7 @@ function PrepaymentPanel() {
 
 // The original, verified "pay X, see result" forward mode — unchanged.
 function PrepaymentAmountMode() {
+  const { format } = useCurrency();
   const obligations = useQuery(api.loanDebt.listObligations);
   const simulate = useAction(api.loanDebt.simulatePrepayment);
   const [obligationId, setObligationId] = useState<string>("");
@@ -676,7 +679,7 @@ function PrepaymentAmountMode() {
                 <option value="">Choose a loan…</option>
                 {obligations.map((o) => (
                   <option key={o.obligationId} value={o.obligationId}>
-                    {o.label} — {rupee(o.balanceMinorUnits)} @ {o.hasRate ? `${o.annualRateBasisPoints! / 100}%` : "rate missing"}
+                    {o.label} — {format(o.balanceMinorUnits)} @ {o.hasRate ? `${o.annualRateBasisPoints! / 100}%` : "rate missing"}
                   </option>
                 ))}
               </select>
@@ -722,6 +725,7 @@ function PrepaymentAmountMode() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function PrepaymentResult({ result }: { result: any }) {
+  const { format } = useCurrency();
   if (result.state === "INSUFFICIENT_DATA") {
     return (
       <Card>
@@ -745,11 +749,11 @@ function PrepaymentResult({ result }: { result: any }) {
       <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", marginBottom: "10px" }}>
         <Stat label="Debt-free (baseline)" value={monthYear(d.baseline.debtFreeDate)} />
         <Stat label="Debt-free (revised)" value={monthYear(d.revised.debtFreeDate)} />
-        <Stat label="Interest saved (gross)" value={rupee(d.interestSavedGrossMinorUnits)} />
-        <Stat label="Prepayment charge" value={rupee(d.prepaymentChargeMinorUnits)} />
-        <Stat label="Net saving" value={rupee(d.netSavingMinorUnits)} />
-        <Stat label="Reserve after lump sum" value={rupee(d.reserveAfterLumpSumMinorUnits)} />
-        {d.revised.mode === "reduceEmi" && <Stat label="New EMI" value={rupee(d.revised.newEmiMinorUnits)} />}
+        <Stat label="Interest saved (gross)" value={format(d.interestSavedGrossMinorUnits)} />
+        <Stat label="Prepayment charge" value={format(d.prepaymentChargeMinorUnits)} />
+        <Stat label="Net saving" value={format(d.netSavingMinorUnits)} />
+        <Stat label="Reserve after lump sum" value={format(d.reserveAfterLumpSumMinorUnits)} />
+        {d.revised.mode === "reduceEmi" && <Stat label="New EMI" value={format(d.revised.newEmiMinorUnits)} />}
       </div>
 
       {d.reserveBelowOneMonthEssentials && (
@@ -798,6 +802,7 @@ const FC_AMBER = "#8A6D3B";
 const FC_AMBER_BG = "#F5EBD8";
 
 function PrepaymentTargetMode() {
+  const { format } = useCurrency();
   const obligations = useQuery(api.loanDebt.listObligations);
   const simulate = useAction(api.loanDebt.simulatePrepaymentTarget);
 
@@ -873,7 +878,7 @@ function PrepaymentTargetMode() {
                 <option value="">Choose a loan…</option>
                 {obligations.map((o) => (
                   <option key={o.obligationId} value={o.obligationId}>
-                    {o.label} — {rupee(o.balanceMinorUnits)} @{" "}
+                    {o.label} — {format(o.balanceMinorUnits)} @{" "}
                     {o.hasRate ? `${o.annualRateBasisPoints! / 100}%` : "rate missing"}
                   </option>
                 ))}
@@ -930,6 +935,7 @@ function PrepaymentTargetMode() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function PrepaymentTargetResult({ result, cached }: { result: any; cached: boolean }) {
+  const { format } = useCurrency();
   if (result.state === "REJECTED") {
     return (
       <Card>
@@ -993,15 +999,15 @@ function PrepaymentTargetResult({ result, cached }: { result: any; cached: boole
       >
         <div style={{ fontSize: "12px", color: colors.inkSoft }}>
           <strong style={{ display: "block", fontSize: "17px", color: colors.ink, fontFamily: fontSerif }}>
-            {rupee(d.requiredTotalMonthlyMinorUnits)}
+            {format(d.requiredTotalMonthlyMinorUnits)}
           </strong>
           Total monthly payment needed
         </div>
         <div style={{ fontSize: "12px", color: colors.inkSoft }}>
           <strong style={{ display: "block", fontSize: "17px", color: colors.ink, fontFamily: fontSerif }}>
-            {rupee(d.requiredExtraMonthlyMinorUnits)}
+            {format(d.requiredExtraMonthlyMinorUnits)}
           </strong>
-          Extra beyond current EMI ({rupee(d.currentEmiMinorUnits)})
+          Extra beyond current EMI ({format(d.currentEmiMinorUnits)})
         </div>
       </div>
 
@@ -1026,7 +1032,7 @@ function PrepaymentTargetResult({ result, cached }: { result: any; cached: boole
             ⚠ This exceeds your current monthly surplus
           </div>
           <div style={{ fontSize: "13.5px", color: colors.ink, marginBottom: "12px" }}>
-            You&apos;re short by <strong style={{ color: FC_RED }}>{rupee(sf.gapMinorUnits)}</strong>/month to
+            You&apos;re short by <strong style={{ color: FC_RED }}>{format(sf.gapMinorUnits)}</strong>/month to
             hit this target from current surplus.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>

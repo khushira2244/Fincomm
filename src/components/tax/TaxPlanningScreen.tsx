@@ -3,6 +3,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonStyle } from "../goalPlanning/kit";
+import { useCurrency } from "../../lib/currency";
 
 // =====================================================================
 // Tax Planning. Deterministic code does every calculation (deduction
@@ -11,9 +12,6 @@ import { Card, CollapsibleSection, ghostButtonStyle, inputStyle, primaryButtonSt
 // rendered here comes straight off a real backend response. GST is
 // informational only and never feeds any calculation.
 // =====================================================================
-
-const rupee = (minor: number | null | undefined) =>
-  minor === null || minor === undefined ? "—" : `₹${Math.round(minor).toLocaleString("en-IN")}`;
 
 const dayMonth = (ts: number) => new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
@@ -489,6 +487,7 @@ function ActionRow({
 // =====================================================================
 
 function DeductionSummaryResult({ bundle, onAskAgain, householdId }: { bundle: ResultBundle; onAskAgain: (bundle: ResultBundle) => void; householdId: string }) {
+  const { format } = useCurrency();
   const r = bundle.result;
   if (!r || r.state !== "COMPUTED") {
     return (
@@ -500,21 +499,21 @@ function DeductionSummaryResult({ bundle, onAskAgain, householdId }: { bundle: R
 
   return (
     <>
-      <VerdictBanner tone="green" badge={`${rupee(r.totalDeductionsMinorUnits)} in deductions found`} headline={r.narration.headline} />
+      <VerdictBanner tone="green" badge={`${format(r.totalDeductionsMinorUnits)} in deductions found`} headline={r.narration.headline} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
-        <StatCard label="Home loan interest" value={rupee(r.loanInterestDeductionMinorUnits)} />
-        <StatCard label="Insurance premiums" value={rupee(r.insurancePremiumDeductionMinorUnits)} />
-        <StatCard label="Investments (80C)" value={rupee(r.investmentDeductionMinorUnits)} />
-        <StatCard label="Standard deduction" value={rupee(r.standardDeductionMinorUnits)} />
+        <StatCard label="Home loan interest" value={format(r.loanInterestDeductionMinorUnits)} />
+        <StatCard label="Insurance premiums" value={format(r.insurancePremiumDeductionMinorUnits)} />
+        <StatCard label="Investments (80C)" value={format(r.investmentDeductionMinorUnits)} />
+        <StatCard label="Standard deduction" value={format(r.standardDeductionMinorUnits)} />
       </div>
 
       <CollapsibleSection title="How this was calculated" defaultOpen>
-        <LineItem label="Home loan interest (Sec 24(b), capped)" value={rupee(r.loanInterestDeductionMinorUnits)} />
-        <LineItem label="Insurance premiums (Sec 80D, capped)" value={rupee(r.insurancePremiumDeductionMinorUnits)} />
-        <LineItem label="80C investments (capped)" value={rupee(r.investmentDeductionMinorUnits)} />
-        <LineItem label="Standard deduction" value={rupee(r.standardDeductionMinorUnits)} />
-        <LineItem label="Total deductions" value={rupee(r.totalDeductionsMinorUnits)} bold />
+        <LineItem label="Home loan interest (Sec 24(b), capped)" value={format(r.loanInterestDeductionMinorUnits)} />
+        <LineItem label="Insurance premiums (Sec 80D, capped)" value={format(r.insurancePremiumDeductionMinorUnits)} />
+        <LineItem label="80C investments (capped)" value={format(r.investmentDeductionMinorUnits)} />
+        <LineItem label="Standard deduction" value={format(r.standardDeductionMinorUnits)} />
+        <LineItem label="Total deductions" value={format(r.totalDeductionsMinorUnits)} bold />
         <p style={{ fontSize: "12px", color: colors.inkSoft, marginTop: "10px", fontStyle: "italic" }}>
           Each figure is capped at its real, sourced legal limit — not just added up raw.
         </p>
@@ -550,6 +549,7 @@ function DeductionSummaryResult({ bundle, onAskAgain, householdId }: { bundle: R
 const REGIME_LABEL: Record<string, string> = { old: "Old Regime", new: "New Regime", similar: "Similar" };
 
 function RegimeComparisonResult({ bundle, onAskAgain, householdId }: { bundle: ResultBundle; onAskAgain: (bundle: ResultBundle) => void; householdId: string }) {
+  const { format } = useCurrency();
   const r = bundle.result;
   if (!r || r.state !== "COMPUTED") {
     return (
@@ -559,7 +559,7 @@ function RegimeComparisonResult({ bundle, onAskAgain, householdId }: { bundle: R
     );
   }
   const recommended = r.recommendedRegime as "old" | "new" | "similar";
-  const badge = recommended === "similar" ? "Both regimes are similar" : `${REGIME_LABEL[recommended]} saves ${rupee(Math.abs(r.oldRegimeEstimatedTaxMinorUnits - r.newRegimeEstimatedTaxMinorUnits))}`;
+  const badge = recommended === "similar" ? "Both regimes are similar" : `${REGIME_LABEL[recommended]} saves ${format(Math.abs(r.oldRegimeEstimatedTaxMinorUnits - r.newRegimeEstimatedTaxMinorUnits))}`;
 
   const regimeCardStyle = (thisRegime: "old" | "new"): React.CSSProperties => ({
     flex: 1,
@@ -582,10 +582,10 @@ function RegimeComparisonResult({ bundle, onAskAgain, householdId }: { bundle: R
             </span>
           )}
           <div style={caps}>Old Regime</div>
-          <div style={{ fontFamily: fontSerif, fontSize: "22px", color: colors.deepGreen }}>{rupee(r.oldRegimeEstimatedTaxMinorUnits)}</div>
+          <div style={{ fontFamily: fontSerif, fontSize: "22px", color: colors.deepGreen }}>{format(r.oldRegimeEstimatedTaxMinorUnits)}</div>
           {r.oldTaxableIncomeMinorUnits !== undefined && (
             <div style={{ fontSize: "11px", color: colors.inkSoft, marginTop: "4px" }}>
-              Taxable income {rupee(r.oldTaxableIncomeMinorUnits)}
+              Taxable income {format(r.oldTaxableIncomeMinorUnits)}
               {r.oldRegimeTopSlabLabel && ` · ${r.oldRegimeTopSlabLabel}`}
             </div>
           )}
@@ -597,10 +597,10 @@ function RegimeComparisonResult({ bundle, onAskAgain, householdId }: { bundle: R
             </span>
           )}
           <div style={caps}>New Regime</div>
-          <div style={{ fontFamily: fontSerif, fontSize: "22px", color: colors.deepGreen }}>{rupee(r.newRegimeEstimatedTaxMinorUnits)}</div>
+          <div style={{ fontFamily: fontSerif, fontSize: "22px", color: colors.deepGreen }}>{format(r.newRegimeEstimatedTaxMinorUnits)}</div>
           {r.newTaxableIncomeMinorUnits !== undefined && (
             <div style={{ fontSize: "11px", color: colors.inkSoft, marginTop: "4px" }}>
-              Taxable income {rupee(r.newTaxableIncomeMinorUnits)}
+              Taxable income {format(r.newTaxableIncomeMinorUnits)}
               {r.newRegimeTopSlabLabel && ` · ${r.newRegimeTopSlabLabel}`}
             </div>
           )}
@@ -634,6 +634,7 @@ function RegimeComparisonResult({ bundle, onAskAgain, householdId }: { bundle: R
 // =====================================================================
 
 function DeductionGapsResult({ bundle, onAskAgain, householdId }: { bundle: ResultBundle; onAskAgain: (bundle: ResultBundle) => void; householdId: string }) {
+  const { format } = useCurrency();
   const r = bundle.result;
   if (!r || r.state !== "COMPUTED") {
     return (
@@ -658,7 +659,7 @@ function DeductionGapsResult({ bundle, onAskAgain, householdId }: { bundle: Resu
               <div style={{ fontSize: "13px" }}>{g.description}</div>
               {g.estimatedMissedDeductionMinorUnits !== undefined && (
                 <div style={{ fontSize: "12px", color: colors.deepGreen, marginTop: "2px", fontWeight: 600 }}>
-                  Room remaining: {rupee(g.estimatedMissedDeductionMinorUnits)}
+                  Room remaining: {format(g.estimatedMissedDeductionMinorUnits)}
                 </div>
               )}
             </div>

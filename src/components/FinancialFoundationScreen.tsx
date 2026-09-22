@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
 import { colors, fontSans, fontSerif, radius } from "../theme";
 import { EmptyState } from "./EmptyState";
+import { useCurrency } from "../lib/currency";
 
 // All data access below (useQuery/useMutation calls, the `now`-ticking
 // runway argument, the integer-minor-units payloads) is unchanged from
@@ -121,9 +122,10 @@ function RunwayCard() {
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
+  const { format } = useCurrency();
   return (
     <div>
-      <div style={{ fontSize: "18px", fontWeight: 700 }}>₹{value.toLocaleString("en-IN")}</div>
+      <div style={{ fontSize: "18px", fontWeight: 700 }}>{format(value)}</div>
       <div style={{ fontSize: "12px", color: colors.inkSoft }}>{label}</div>
     </div>
   );
@@ -195,6 +197,7 @@ function PendingFactCard({
   onConfirm: () => void;
 }) {
   const claimed = fact.claimedValue as ClaimedValue;
+  const { format } = useCurrency();
   return (
     <div
       style={{
@@ -212,8 +215,7 @@ function PendingFactCard({
       }}
     >
       <span>
-        📎 Found in your {fact.sourceType}: <strong>{claimed.label}</strong> — ₹
-        {claimed.amountMinorUnits.toLocaleString("en-IN")}
+        📎 Found in your {fact.sourceType}: <strong>{claimed.label}</strong> — {format(claimed.amountMinorUnits)}
         {claimed.detail ? ` · ${claimed.detail}` : ""}
       </span>
       <div style={{ display: "flex", gap: "8px" }}>
@@ -463,13 +465,15 @@ function IncomeSourceRow({ incomeSource }: { incomeSource: Doc<"incomeSources"> 
   const [dependable, setDependable] = useState(incomeSource.reliability === "dependable");
   const [error, setError] = useState<string | null>(null);
 
+  const { format } = useCurrency();
+
   const save = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     void update({
       incomeSourceId: incomeSource._id,
       label,
-      amountMinorUnits: Number(amount),
+      amountMinorUnits: parseAmount(amount),
       currency: incomeSource.currency,
       cadence,
       reliability: dependable ? "dependable" : "uncertain",
@@ -481,7 +485,7 @@ function IncomeSourceRow({ incomeSource }: { incomeSource: Doc<"incomeSources"> 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-        <EntryRow label={incomeSource.label} detail={`₹${incomeSource.amountMinorUnits.toLocaleString("en-IN")} / ${CADENCE_LABEL[incomeSource.cadence]} · ${incomeSource.reliability === "dependable" ? "Dependable" : "Uncertain"}`} />
+        <EntryRow label={incomeSource.label} detail={`${format(incomeSource.amountMinorUnits)} / ${CADENCE_LABEL[incomeSource.cadence]} · ${incomeSource.reliability === "dependable" ? "Dependable" : "Uncertain"}`} />
         <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
           <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
             {editing ? "Close" : "Edit"}
@@ -611,13 +615,15 @@ function ExpenseRow({ expense }: { expense: Doc<"expenses"> }) {
   const [essential, setEssential] = useState(expense.classification === "essential");
   const [error, setError] = useState<string | null>(null);
 
+  const { format } = useCurrency();
+
   const save = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     void update({
       expenseId: expense._id,
       label,
-      amountMinorUnits: Number(amount),
+      amountMinorUnits: parseAmount(amount),
       currency: expense.currency,
       classification: essential ? "essential" : "flexible",
       recurrence,
@@ -629,7 +635,7 @@ function ExpenseRow({ expense }: { expense: Doc<"expenses"> }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-        <EntryRow label={expense.label} detail={`₹${expense.amountMinorUnits.toLocaleString("en-IN")} / ${RECURRENCE_LABEL[expense.recurrence]} · ${expense.classification === "essential" ? "Essential" : "Flexible"}`} />
+        <EntryRow label={expense.label} detail={`${format(expense.amountMinorUnits)} / ${RECURRENCE_LABEL[expense.recurrence]} · ${expense.classification === "essential" ? "Essential" : "Flexible"}`} />
         <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
           <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
             {editing ? "Close" : "Edit"}
@@ -746,14 +752,16 @@ function ObligationRow({ obligation }: { obligation: Doc<"obligations"> }) {
   const [emi, setEmi] = useState(String(obligation.emiMinorUnits));
   const [error, setError] = useState<string | null>(null);
 
+  const { format } = useCurrency();
+
   const save = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     void update({
       obligationId: obligation._id,
       label,
-      balanceMinorUnits: Number(balance),
-      emiMinorUnits: Number(emi),
+      balanceMinorUnits: parseAmount(balance),
+      emiMinorUnits: parseAmount(emi),
       currency: obligation.currency,
     })
       .then(() => setEditing(false))
@@ -763,7 +771,7 @@ function ObligationRow({ obligation }: { obligation: Doc<"obligations"> }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-        <EntryRow label={obligation.label} detail={`₹${obligation.balanceMinorUnits.toLocaleString("en-IN")} owed · ₹${obligation.emiMinorUnits.toLocaleString("en-IN")}/mo paid`} />
+        <EntryRow label={obligation.label} detail={`${format(obligation.balanceMinorUnits)} owed · ${format(obligation.emiMinorUnits)}/mo paid`} />
         <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
           <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
             {editing ? "Close" : "Edit"}
@@ -875,6 +883,7 @@ function AssetRow({ asset }: { asset: Doc<"assets"> }) {
   const [value, setValue] = useState(String(asset.valueMinorUnits));
   const [liquidity, setLiquidity] = useState(asset.liquidity);
   const [error, setError] = useState<string | null>(null);
+  const { format } = useCurrency();
 
   const save = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -882,7 +891,7 @@ function AssetRow({ asset }: { asset: Doc<"assets"> }) {
     void update({
       assetId: asset._id,
       label,
-      valueMinorUnits: Number(value),
+      valueMinorUnits: parseAmount(value),
       currency: asset.currency,
       liquidity,
     })
@@ -893,7 +902,7 @@ function AssetRow({ asset }: { asset: Doc<"assets"> }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-        <EntryRow label={asset.label} detail={`₹${asset.valueMinorUnits.toLocaleString("en-IN")} · ${LIQUIDITY_LABEL[asset.liquidity]}`} />
+        <EntryRow label={asset.label} detail={`${format(asset.valueMinorUnits)} · ${LIQUIDITY_LABEL[asset.liquidity]}`} />
         <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
           <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
             {editing ? "Close" : "Edit"}
@@ -1037,6 +1046,7 @@ function InsurancePolicyRow({ policy }: { policy: Doc<"insurancePolicies"> }) {
   const [insurerName, setInsurerName] = useState(policy.insurerName ?? "");
   const [policyNumber, setPolicyNumber] = useState(policy.policyNumber ?? "");
   const [error, setError] = useState<string | null>(null);
+  const { format } = useCurrency();
 
   const save = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -1044,8 +1054,8 @@ function InsurancePolicyRow({ policy }: { policy: Doc<"insurancePolicies"> }) {
     void update({
       policyId: policy._id,
       type,
-      coverageAmountMinorUnits: Number(coverageAmount),
-      premiumMinorUnits: Number(premium),
+      coverageAmountMinorUnits: parseAmount(coverageAmount),
+      premiumMinorUnits: parseAmount(premium),
       premiumFrequency,
       insurerName: insurerName.trim() || undefined,
       policyNumber: policyNumber.trim() || undefined,
@@ -1059,7 +1069,7 @@ function InsurancePolicyRow({ policy }: { policy: Doc<"insurancePolicies"> }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
         <EntryRow
           label={`${INSURANCE_TYPE_LABEL[policy.type]}${policy.insurerName ? ` — ${policy.insurerName}` : ""}`}
-          detail={`₹${policy.coverageAmountMinorUnits.toLocaleString("en-IN")} cover · ₹${policy.premiumMinorUnits.toLocaleString("en-IN")}/${PREMIUM_FREQUENCY_LABEL[policy.premiumFrequency]} premium`}
+          detail={`${format(policy.coverageAmountMinorUnits)} cover · ${format(policy.premiumMinorUnits)}/${PREMIUM_FREQUENCY_LABEL[policy.premiumFrequency]} premium`}
         />
         <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
           <button style={ghostButtonStyle} onClick={() => setEditing((v) => !v)}>
