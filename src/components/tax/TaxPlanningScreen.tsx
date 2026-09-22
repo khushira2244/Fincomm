@@ -226,7 +226,7 @@ function TaxProfileCard() {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", alignItems: "end" }}>
         {employmentType === "salaried" ? (
           <>
             <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: colors.inkSoft }}>
