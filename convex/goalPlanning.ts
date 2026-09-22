@@ -387,6 +387,236 @@ export const addSituationNote = mutation({
 });
 
 // ---------------------------------------------------------------------
+// Update / Delete mutations — every entry added above must also be
+// editable and deletable (same ownership-check pattern as
+// convex/obligations.ts's updateObligation/deleteObligation and
+// convex/sideIncome.ts's deleteSideIncomeEntry).
+// ---------------------------------------------------------------------
+
+export const updateFamilySupport = mutation({
+  args: {
+    familySupportId: v.id("timelineFamilySupport"),
+    label: v.string(),
+    monthlyCostMinorUnits: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertIntegerMinorUnits(args.monthlyCostMinorUnits, "monthlyCostMinorUnits");
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("timelineFamilySupport", args.familySupportId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Family support entry not found.");
+    }
+    await ctx.db.patch("timelineFamilySupport", args.familySupportId, {
+      label: args.label,
+      monthlyCostMinorUnits: args.monthlyCostMinorUnits,
+    });
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const deleteFamilySupport = mutation({
+  args: { familySupportId: v.id("timelineFamilySupport") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("timelineFamilySupport", args.familySupportId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Family support entry not found.");
+    }
+    await ctx.db.delete("timelineFamilySupport", args.familySupportId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const updateFamilyObligation = mutation({
+  args: {
+    familyObligationId: v.id("familyObligations"),
+    label: v.string(),
+    costPerYearMinorUnits: v.number(),
+    forHowManyYears: v.number(),
+    reason: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertIntegerMinorUnits(args.costPerYearMinorUnits, "costPerYearMinorUnits");
+    assertWholeYears(args.forHowManyYears);
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("familyObligations", args.familyObligationId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Family obligation not found.");
+    }
+    await ctx.db.patch("familyObligations", args.familyObligationId, {
+      label: args.label,
+      costPerYearMinorUnits: args.costPerYearMinorUnits,
+      forHowManyYears: args.forHowManyYears,
+      reason: args.reason,
+    });
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const deleteFamilyObligation = mutation({
+  args: { familyObligationId: v.id("familyObligations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("familyObligations", args.familyObligationId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Family obligation not found.");
+    }
+    await ctx.db.delete("familyObligations", args.familyObligationId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+// Covers both emergency notes (kind="hypothetical") and situation notes
+// (kind="planned") — same table, one update/delete pair for both, as
+// addEmergencyNote/addSituationNote both insert into "situations".
+export const updateSituation = mutation({
+  args: {
+    situationId: v.id("situations"),
+    description: v.string(),
+    situationCategory: v.optional(
+      v.union(
+        v.literal("familyEmergency"),
+        v.literal("health"),
+        v.literal("location"),
+        v.literal("sideIncome"),
+        v.literal("misc"),
+      ),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("situations", args.situationId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Situation not found.");
+    }
+    await ctx.db.patch("situations", args.situationId, {
+      description: args.description,
+      ...(args.situationCategory !== undefined
+        ? { situationCategory: args.situationCategory }
+        : {}),
+    });
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const deleteSituation = mutation({
+  args: { situationId: v.id("situations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("situations", args.situationId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Situation not found.");
+    }
+    await ctx.db.delete("situations", args.situationId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const updateTimelineLoan = mutation({
+  args: {
+    timelineLoanId: v.id("timelineLoans"),
+    label: v.string(),
+    outstandingBalanceMinorUnits: v.number(),
+    emiMinorUnits: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertIntegerMinorUnits(args.outstandingBalanceMinorUnits, "outstandingBalanceMinorUnits");
+    assertIntegerMinorUnits(args.emiMinorUnits, "emiMinorUnits");
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("timelineLoans", args.timelineLoanId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Timeline loan not found.");
+    }
+    await ctx.db.patch("timelineLoans", args.timelineLoanId, {
+      label: args.label,
+      outstandingBalanceMinorUnits: args.outstandingBalanceMinorUnits,
+      emiMinorUnits: args.emiMinorUnits,
+    });
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const deleteTimelineLoan = mutation({
+  args: { timelineLoanId: v.id("timelineLoans") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("timelineLoans", args.timelineLoanId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Timeline loan not found.");
+    }
+    await ctx.db.delete("timelineLoans", args.timelineLoanId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+// Covers both career goals (horizon="longTerm") and short-term goals
+// (horizon="shortTerm") — same table, one update/delete pair for both,
+// as addCareerGoal/addShortTermGoal both insert into "goals". This is
+// separate from updateGoalSteps above, which only patches
+// positiveSteps/negativeSteps; this one patches the goal's own content.
+export const updateGoal = mutation({
+  args: {
+    goalId: v.id("goals"),
+    description: v.string(),
+    targetAmountMinorUnits: v.optional(v.number()),
+    positiveSteps: v.optional(v.array(v.string())),
+    negativeSteps: v.optional(v.array(v.string())),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.targetAmountMinorUnits !== undefined) {
+      assertIntegerMinorUnits(args.targetAmountMinorUnits, "targetAmountMinorUnits");
+    }
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("goals", args.goalId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Goal not found.");
+    }
+    await ctx.db.patch("goals", args.goalId, {
+      description: args.description,
+      ...(args.targetAmountMinorUnits !== undefined
+        ? { targetAmountMinorUnits: args.targetAmountMinorUnits }
+        : {}),
+      ...(args.positiveSteps !== undefined ? { positiveSteps: args.positiveSteps } : {}),
+      ...(args.negativeSteps !== undefined ? { negativeSteps: args.negativeSteps } : {}),
+    });
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+export const deleteGoal = mutation({
+  args: { goalId: v.id("goals") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const existing = await ctx.db.get("goals", args.goalId);
+    if (existing === null || existing.householdId !== membership.householdId) {
+      throw new ConvexError("Goal not found.");
+    }
+    await ctx.db.delete("goals", args.goalId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
+// ---------------------------------------------------------------------
 // Suggestions
 // ---------------------------------------------------------------------
 

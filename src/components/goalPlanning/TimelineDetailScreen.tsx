@@ -5,6 +5,7 @@ import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import {
   CollapsibleSection,
+  DeleteButton,
   EntryRow,
   NoEntries,
   SubLabel,
@@ -12,6 +13,7 @@ import {
   ghostButtonStyle,
   inputStyle,
   linkStyle,
+  parseAmount,
   primaryButtonStyle,
   textareaStyle,
   useDraft,
@@ -376,9 +378,7 @@ function FamilySection({
       {support.length === 0 ? (
         <NoEntries />
       ) : (
-        support.map((s) => (
-          <EntryRow key={s._id} label={s.label} detail={`${format(s.monthlyCostMinorUnits)}/mo`} />
-        ))
+        support.map((s) => <FamilySupportRow key={s._id} support={s} />)
       )}
       <form style={formRowStyle} onSubmit={submitSupport}>
         <input
@@ -402,15 +402,7 @@ function FamilySection({
       {obligations.length === 0 ? (
         <NoEntries />
       ) : (
-        obligations.map((o) => (
-          <EntryRow
-            key={o._id}
-            label={o.label}
-            detail={`${format(o.costPerYearMinorUnits)}/yr × ${o.forHowManyYears} yr${
-              o.reason ? ` · ${o.reason}` : ""
-            }`}
-          />
-        ))
+        obligations.map((o) => <FamilyObligationRow key={o._id} obligation={o} />)
       )}
       <form style={formRowStyle} onSubmit={submitObligation}>
         <input
@@ -450,7 +442,7 @@ function FamilySection({
       {emergencyNotes.length === 0 ? (
         <NoEntries />
       ) : (
-        emergencyNotes.map((n) => <EntryRow key={n._id} label={n.description} />)
+        emergencyNotes.map((n) => <EmergencyNoteRow key={n._id} note={n} />)
       )}
       <form style={{ ...formRowStyle, alignItems: "stretch" }} onSubmit={submitEmergency}>
         <textarea

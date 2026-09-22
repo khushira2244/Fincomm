@@ -56,6 +56,51 @@ export const ghostButtonStyle: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+// Same red-bordered ghost style used by Financial Foundation's
+// DeleteButton, kept local here since GSP's styles are a deliberate
+// parallel copy rather than a shared import.
+export const dangerButtonStyle: CSSProperties = {
+  ...ghostButtonStyle,
+  color: "#a13d3d",
+  borderColor: "#a13d3d",
+};
+
+// A plain rupee/dollar amount field naturally invites commas or a
+// currency symbol — a bare Number() on that is NaN, which the backend's
+// integer check correctly rejects. Same fix used across Financial
+// Foundation's row edit forms.
+export function parseAmount(raw: string): number {
+  return Number(raw.replace(/[^0-9.-]/g, ""));
+}
+
+// Two-click confirm (no modal) — a first click swaps the label to
+// "Really delete?" and only a second click within a few seconds
+// actually calls `onDelete`, so a stray click can't silently remove a
+// real entry. Same pattern as Financial Foundation's DeleteButton.
+export function DeleteButton({ onDelete }: { onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+  return (
+    <button
+      style={dangerButtonStyle}
+      onClick={() => {
+        if (confirming) {
+          onDelete();
+          setConfirming(false);
+        } else {
+          setConfirming(true);
+        }
+      }}
+    >
+      {confirming ? "Really delete?" : "Delete"}
+    </button>
+  );
+}
+
 export const linkStyle: CSSProperties = {
   fontSize: "13px",
   color: colors.deepGreen,
