@@ -9,6 +9,15 @@ import { EmptyState } from "./EmptyState";
 // runway argument, the integer-minor-units payloads) is unchanged from
 // the previous build — only rendering/styling is new.
 
+// A plain rupee amount field naturally invites commas ("80,000") — a
+// bare Number() on that is NaN, which the backend's integer check
+// correctly rejects. Strips non-digit/decimal/minus characters first,
+// same fix already applied to Goal & Situation Planning's Career &
+// Income section for the identical bug.
+function parseAmount(raw: string): number {
+  return Number(raw.replace(/[^0-9.-]/g, ""));
+}
+
 export function FinancialFoundationScreen() {
   const incomeSources = useQuery(api.incomeSources.listIncomeSources);
   const expenses = useQuery(api.expenses.listExpenses);
@@ -362,26 +371,30 @@ function IncomeSection({
   const [cadence, setCadence] = useState<"monthly" | "weekly" | "annual" | "irregular">("monthly");
   const [dependable, setDependable] = useState(true);
   const [editingFactId, setEditingFactId] = useState<Id<"extractedFacts"> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
     void addIncomeSource({
       label,
-      amountMinorUnits: Number(amount),
+      amountMinorUnits: parseAmount(amount),
       currency: "INR",
       cadence,
       reliability: dependable ? "dependable" : "uncertain",
       activeFrom: Date.now(),
-    }).then(async (newId) => {
-      if (editingFactId) {
-        await confirmFact({ factId: editingFactId, targetEntityId: newId });
-        setEditingFactId(null);
-      }
-      setLabel("");
-      setAmount("");
-      setCadence("monthly");
-      setDependable(true);
-    });
+    })
+      .then(async (newId) => {
+        if (editingFactId) {
+          await confirmFact({ factId: editingFactId, targetEntityId: newId });
+          setEditingFactId(null);
+        }
+        setLabel("");
+        setAmount("");
+        setCadence("monthly");
+        setDependable(true);
+      })
+      .catch((err: Error) => setError(err.message));
   };
 
   const startEdit = (fact: PendingFact) => {
@@ -408,7 +421,7 @@ function IncomeSection({
   return (
     <Card>
       <SectionHeading>Income sources</SectionHeading>
-      {incomeSources.map((i) => (
+      {[...incomeSources].reverse().map((i) => (
         <IncomeSourceRow key={i._id} incomeSource={i} />
       ))}
       {pending?.map((fact) => (
@@ -428,6 +441,7 @@ function IncomeSection({
           Dependable
         </label>
         <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
+        {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
       </form>
       <UploadLink label="Upload a payslip or bank statement instead" sectionHint="incomeSources" />
     </Card>
@@ -510,25 +524,29 @@ function ExpenseSection({
   const [recurrence, setRecurrence] = useState<"monthly" | "weekly" | "annual" | "oneOff">("monthly");
   const [essential, setEssential] = useState(true);
   const [editingFactId, setEditingFactId] = useState<Id<"extractedFacts"> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
     void addExpense({
       label,
-      amountMinorUnits: Number(amount),
+      amountMinorUnits: parseAmount(amount),
       currency: "INR",
       classification: essential ? "essential" : "flexible",
       recurrence,
-    }).then(async (newId) => {
-      if (editingFactId) {
-        await confirmFact({ factId: editingFactId, targetEntityId: newId });
-        setEditingFactId(null);
-      }
-      setLabel("");
-      setAmount("");
-      setRecurrence("monthly");
-      setEssential(true);
-    });
+    })
+      .then(async (newId) => {
+        if (editingFactId) {
+          await confirmFact({ factId: editingFactId, targetEntityId: newId });
+          setEditingFactId(null);
+        }
+        setLabel("");
+        setAmount("");
+        setRecurrence("monthly");
+        setEssential(true);
+      })
+      .catch((err: Error) => setError(err.message));
   };
 
   const startEdit = (fact: PendingFact) => {
@@ -554,7 +572,7 @@ function ExpenseSection({
   return (
     <Card>
       <SectionHeading>Expenses</SectionHeading>
-      {expenses.map((e) => (
+      {[...expenses].reverse().map((e) => (
         <ExpenseRow key={e._id} expense={e} />
       ))}
       {pending?.map((fact) => (
@@ -574,6 +592,7 @@ function ExpenseSection({
           Essential
         </label>
         <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
+        {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
       </form>
       <UploadLink label="Upload a photo or PDF instead" sectionHint="expenses" />
     </Card>
@@ -652,25 +671,29 @@ function ObligationSection({
   const [balance, setBalance] = useState("");
   const [emi, setEmi] = useState("");
   const [editingFactId, setEditingFactId] = useState<Id<"extractedFacts"> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
     void addObligation({
       label,
-      balanceMinorUnits: Number(balance),
-      emiMinorUnits: Number(emi),
+      balanceMinorUnits: parseAmount(balance),
+      emiMinorUnits: parseAmount(emi),
       currency: "INR",
       interestRateBasisPoints: 0,
       dueDayOfMonth: 1,
-    }).then(async (newId) => {
-      if (editingFactId) {
-        await confirmFact({ factId: editingFactId, targetEntityId: newId });
-        setEditingFactId(null);
-      }
-      setLabel("");
-      setBalance("");
-      setEmi("");
-    });
+    })
+      .then(async (newId) => {
+        if (editingFactId) {
+          await confirmFact({ factId: editingFactId, targetEntityId: newId });
+          setEditingFactId(null);
+        }
+        setLabel("");
+        setBalance("");
+        setEmi("");
+      })
+      .catch((err: Error) => setError(err.message));
   };
 
   const startEdit = (fact: PendingFact) => {
@@ -696,7 +719,7 @@ function ObligationSection({
   return (
     <Card>
       <SectionHeading>Obligations (loans/EMIs)</SectionHeading>
-      {obligations.map((o) => (
+      {[...obligations].reverse().map((o) => (
         <ObligationRow key={o._id} obligation={o} />
       ))}
       {pending?.map((fact) => (
@@ -707,6 +730,7 @@ function ObligationSection({
         <input style={formInputStyle} placeholder="Total amount still owed" value={balance} onChange={(e) => setBalance(e.target.value)} />
         <input style={formInputStyle} placeholder="What you pay monthly" value={emi} onChange={(e) => setEmi(e.target.value)} />
         <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
+        {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
       </form>
       <UploadLink label="Upload a photo or PDF instead" sectionHint="obligations" />
     </Card>
@@ -776,23 +800,27 @@ function AssetSection({
   const [value, setValue] = useState("");
   const [liquidity, setLiquidity] = useState<"liquid" | "semiLiquid" | "illiquid">("liquid");
   const [editingFactId, setEditingFactId] = useState<Id<"extractedFacts"> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
     void addAsset({
       label,
-      valueMinorUnits: Number(value),
+      valueMinorUnits: parseAmount(value),
       currency: "INR",
       liquidity,
-    }).then(async (newId) => {
-      if (editingFactId) {
-        await confirmFact({ factId: editingFactId, targetEntityId: newId });
-        setEditingFactId(null);
-      }
-      setLabel("");
-      setValue("");
-      setLiquidity("liquid");
-    });
+    })
+      .then(async (newId) => {
+        if (editingFactId) {
+          await confirmFact({ factId: editingFactId, targetEntityId: newId });
+          setEditingFactId(null);
+        }
+        setLabel("");
+        setValue("");
+        setLiquidity("liquid");
+      })
+      .catch((err: Error) => setError(err.message));
   };
 
   const startEdit = (fact: PendingFact) => {
@@ -816,7 +844,7 @@ function AssetSection({
   return (
     <Card>
       <SectionHeading>Assets / savings</SectionHeading>
-      {assets.map((a) => (
+      {[...assets].reverse().map((a) => (
         <AssetRow key={a._id} asset={a} />
       ))}
       {pending?.map((fact) => (
@@ -831,6 +859,7 @@ function AssetSection({
           <option value="illiquid">Illiquid</option>
         </select>
         <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
+        {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
       </form>
     </Card>
   );
@@ -904,29 +933,33 @@ function InsuranceSection({
   const [insurerName, setInsurerName] = useState("");
   const [policyNumber, setPolicyNumber] = useState("");
   const [editingFactId, setEditingFactId] = useState<Id<"extractedFacts"> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
     void addInsurancePolicy({
       type,
-      coverageAmountMinorUnits: Number(coverageAmount),
-      premiumMinorUnits: Number(premium),
+      coverageAmountMinorUnits: parseAmount(coverageAmount),
+      premiumMinorUnits: parseAmount(premium),
       premiumFrequency,
       currency: "INR",
       insurerName: insurerName.trim() || undefined,
       policyNumber: policyNumber.trim() || undefined,
-    }).then(async (newId) => {
-      if (editingFactId) {
-        await confirmFact({ factId: editingFactId, targetEntityId: newId });
-        setEditingFactId(null);
-      }
-      setType("life");
-      setCoverageAmount("");
-      setPremium("");
-      setPremiumFrequency("annual");
-      setInsurerName("");
-      setPolicyNumber("");
-    });
+    })
+      .then(async (newId) => {
+        if (editingFactId) {
+          await confirmFact({ factId: editingFactId, targetEntityId: newId });
+          setEditingFactId(null);
+        }
+        setType("life");
+        setCoverageAmount("");
+        setPremium("");
+        setPremiumFrequency("annual");
+        setInsurerName("");
+        setPolicyNumber("");
+      })
+      .catch((err: Error) => setError(err.message));
   };
 
   const startEdit = (fact: PendingFact) => {
@@ -955,7 +988,7 @@ function InsuranceSection({
   return (
     <Card>
       <SectionHeading>Insurance policies</SectionHeading>
-      {insurancePolicies.map((p) => (
+      {[...insurancePolicies].reverse().map((p) => (
         <InsurancePolicyRow key={p._id} policy={p} />
       ))}
       {pending?.map((fact) => (
@@ -979,6 +1012,7 @@ function InsuranceSection({
         <input style={formInputStyle} placeholder="Insurer (optional)" value={insurerName} onChange={(e) => setInsurerName(e.target.value)} />
         <input style={formInputStyle} placeholder="Policy number (optional)" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} />
         <button style={addButtonStyle} type="submit">{editingFactId ? "Confirm" : "Add"}</button>
+        {error && <span style={{ color: "#a13d3d", fontSize: "12px" }}>{error}</span>}
       </form>
       <UploadLink label="Upload a policy document or renewal notice instead" sectionHint="insurancePolicies" />
     </Card>
