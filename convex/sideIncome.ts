@@ -223,6 +223,21 @@ export const updateSideIncomeEntry = mutation({
   },
 });
 
+export const deleteSideIncomeEntry = mutation({
+  args: { entryId: v.id("sideIncomeEntries") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const membership = await requireMembership(ctx);
+    const entry = await ctx.db.get("sideIncomeEntries", args.entryId);
+    if (entry === null || entry.householdId !== membership.householdId) {
+      throw new ConvexError("Side-income entry not found.");
+    }
+    await ctx.db.delete(args.entryId);
+    await bumpStateRevision(ctx, membership.householdId);
+    return null;
+  },
+});
+
 export const listSideIncomeEntries = query({
   args: {},
   returns: v.array(v.any()),

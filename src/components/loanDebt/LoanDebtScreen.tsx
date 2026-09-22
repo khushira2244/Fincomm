@@ -1,10 +1,14 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { colors, fontSans, fontSerif, radius } from "../../theme";
 import { ghostButtonStyle, inputStyle, linkStyle, primaryButtonStyle, useDraft } from "../goalPlanning/kit";
 import { useCurrency } from "../../lib/currency";
+
+function parseAmount(raw: string): number {
+  return Number(raw.replace(/[^0-9.-]/g, ""));
+}
 
 const monthYear = (ts: number | null | undefined) =>
   ts === null || ts === undefined
@@ -34,6 +38,40 @@ function Card({ children }: { children: React.ReactNode }) {
     >
       {children}
     </section>
+  );
+}
+
+const dangerButtonStyle: React.CSSProperties = {
+  ...ghostButtonStyle,
+  color: "#a13d3d",
+  borderColor: "#a13d3d",
+};
+
+// Two-click confirm (no modal) — a first click swaps the label to
+// "Really delete?" and only a second click within a few seconds
+// actually calls `onDelete`, so a stray click can't silently remove a
+// real loan. Matches the pattern used in Financial Foundation.
+function DeleteButton({ onDelete }: { onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+  return (
+    <button
+      style={dangerButtonStyle}
+      onClick={() => {
+        if (confirming) {
+          onDelete();
+          setConfirming(false);
+        } else {
+          setConfirming(true);
+        }
+      }}
+    >
+      {confirming ? "Really delete?" : "Delete"}
+    </button>
   );
 }
 
@@ -164,6 +202,7 @@ type DebtRow = {
 
 function DebtCard({ debt }: { debt: DebtRow }) {
   const { format } = useCurrency();
+  const remove = useMutation(api.obligations.deleteObligation);
   const [editing, setEditing] = useState(false);
   return (
     <Card>
@@ -189,42 +228,48 @@ function DebtCard({ debt }: { debt: DebtRow }) {
               : "No bundled insurance recorded"}
           </div>
         </div>
-        <button style={ghostButtonStyle} onClick={() => setEditing(!editing)}>
-          {editing ? "Close" : "Edit loan details"}
-        </button>
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          <button style={ghostButtonStyle} onClick={() => setEditing(!editing)}>
+            {editing ? "Close" : "Edit loan details"}
+          </button>
+          <DeleteButton onDelete={() => void remove({ obligationId: debt.obligationId })} />
+        </div>
       </div>
       <Warnings items={debt.warnings} />
-      {editing && <LoanDetailsForm obligationId={debt.obligationId} onDone={() => setEditing(false)} />}
+      {editing && <LoanDetailsForm debt={debt} onDone={() => setEditing(false)} />}
     </Card>
   );
 }
 
-function LoanDetailsForm({ obligationId, onDone }: { obligationId: Id<"obligations">; onDone: () => void }) {
+function LoanDetailsForm({ debt, onDone }: { debt: DebtRow; onDone: () => void }) {
   const update = useMutation(api.loanDebt.updateLoanDetails);
-  const [type, setType] = useState<string>("");
-  const [ratePct, setRatePct] = useState("");
-  const [rateType, setRateType] = useState<string>("");
-  const [tenure, setTenure] = useState("");
+  const [type, setType] = useState<string>(debt.obligationType ?? "");
+  const [ratePct, setRatePct] = useState(debt.annualRatePercent !== null ? String(debt.annualRatePercent) : "");
+  const [rateType, setRateType] = useState<string>(debt.rateType ?? "");
+  const [tenure, setTenure] = useState(debt.remainingTenureMonths !== null ? String(debt.remainingTenureMonths) : "");
   const [origPrincipal, setOrigPrincipal] = useState("");
   const [minPayment, setMinPayment] = useState("");
   const [fees, setFees] = useState("");
   const [prepayTerms, setPrepayTerms] = useState("");
-  const [bundledInsurance, setBundledInsurance] = useState("");
+  const [bundledInsurance, setBundledInsurance] = useState(
+    debt.bundledInsuranceCoverageMinorUnits !== null ? String(debt.bundledInsuranceCoverageMinorUnits) : "",
+  );
   const [error, setError] = useState<string | null>(null);
+  const { currency } = useCurrency();
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    const args: Record<string, unknown> = { obligationId };
+    const args: Record<string, unknown> = { obligationId: debt.obligationId };
     if (type) args.obligationType = type;
-    if (ratePct.trim() !== "") args.annualRateBasisPoints = Math.round(Number(ratePct) * 100);
+    if (ratePct.trim() !== "") args.annualRateBasisPoints = Math.round(parseAmount(ratePct) * 100);
     if (rateType) args.rateType = rateType;
-    if (tenure.trim() !== "") args.remainingTenureMonths = Number(tenure);
-    if (origPrincipal.trim() !== "") args.originalPrincipalMinorUnits = Number(origPrincipal);
-    if (minPayment.trim() !== "") args.minimumPaymentMinorUnits = Number(minPayment);
-    if (fees.trim() !== "") args.feesMinorUnits = Number(fees);
+    if (tenure.trim() !== "") args.remainingTenureMonths = parseAmount(tenure);
+    if (origPrincipal.trim() !== "") args.originalPrincipalMinorUnits = parseAmount(origPrincipal);
+    if (minPayment.trim() !== "") args.minimumPaymentMinorUnits = parseAmount(minPayment);
+    if (fees.trim() !== "") args.feesMinorUnits = parseAmount(fees);
     if (prepayTerms.trim() !== "") args.prepaymentTerms = prepayTerms.trim();
-    if (bundledInsurance.trim() !== "") args.bundledInsuranceCoverageMinorUnits = Number(bundledInsurance);
+    if (bundledInsurance.trim() !== "") args.bundledInsuranceCoverageMinorUnits = parseAmount(bundledInsurance);
     void update(args as never)
       .then(() => onDone())
       .catch((err: Error) => setError(err.message));
@@ -272,19 +317,19 @@ function LoanDetailsForm({ obligationId, onDone }: { obligationId: Id<"obligatio
         <input style={field} value={tenure} onChange={(e) => setTenure(e.target.value)} placeholder="e.g. 84" />
       </label>
       <label style={cell}>
-        Original principal (₹)
+        Original principal ({currency.symbol})
         <input style={field} value={origPrincipal} onChange={(e) => setOrigPrincipal(e.target.value)} />
       </label>
       <label style={cell}>
-        Minimum payment (₹)
+        Minimum payment ({currency.symbol})
         <input style={field} value={minPayment} onChange={(e) => setMinPayment(e.target.value)} />
       </label>
       <label style={cell}>
-        Fees (₹)
+        Fees ({currency.symbol})
         <input style={field} value={fees} onChange={(e) => setFees(e.target.value)} />
       </label>
       <label style={cell}>
-        Bundled insurance coverage (₹)
+        Bundled insurance coverage ({currency.symbol})
         <input
           style={field}
           value={bundledInsurance}
@@ -335,6 +380,7 @@ function AffordabilityPanel() {
   const [error, setError] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [result, setResult] = useState<any | null>(null);
+  const { currency } = useCurrency();
 
   const run = (e: FormEvent) => {
     e.preventDefault();
@@ -343,12 +389,12 @@ function AffordabilityPanel() {
     setBusy(true);
     void check({
       offer: {
-        principalMinorUnits: Number(principal),
-        downPaymentMinorUnits: downPayment.trim() === "" ? 0 : Number(downPayment),
-        annualRateBasisPoints: Math.round(Number(ratePct) * 100),
+        principalMinorUnits: parseAmount(principal),
+        downPaymentMinorUnits: downPayment.trim() === "" ? 0 : parseAmount(downPayment),
+        annualRateBasisPoints: Math.round(parseAmount(ratePct) * 100),
         rateType,
-        tenureMonths: Number(tenure),
-        feesMinorUnits: fees.trim() === "" ? 0 : Number(fees),
+        tenureMonths: parseAmount(tenure),
+        feesMinorUnits: fees.trim() === "" ? 0 : parseAmount(fees),
       },
     })
       .then((r) => setResult(r.result))
@@ -368,11 +414,11 @@ function AffordabilityPanel() {
           style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", alignItems: "end" }}
         >
           <label style={cell}>
-            Loan principal (₹)
+            Loan principal ({currency.symbol})
             <input style={f} value={principal} onChange={(e) => setPrincipal(e.target.value)} placeholder="amount borrowed" />
           </label>
           <label style={cell}>
-            Down payment (₹)
+            Down payment ({currency.symbol})
             <input style={f} value={downPayment} onChange={(e) => setDownPayment(e.target.value)} placeholder="0 if none" />
           </label>
           <label style={cell}>
@@ -391,7 +437,7 @@ function AffordabilityPanel() {
             <input style={f} value={tenure} onChange={(e) => setTenure(e.target.value)} placeholder="e.g. 120" />
           </label>
           <label style={cell}>
-            Fees / charges (₹)
+            Fees / charges ({currency.symbol})
             <input style={f} value={fees} onChange={(e) => setFees(e.target.value)} placeholder="0 if none" />
           </label>
           <div style={{ gridColumn: "1 / -1", display: "flex", gap: "8px", alignItems: "center" }}>
@@ -622,7 +668,7 @@ function PrepaymentPanel() {
 
 // The original, verified "pay X, see result" forward mode — unchanged.
 function PrepaymentAmountMode() {
-  const { format } = useCurrency();
+  const { format, currency } = useCurrency();
   const obligations = useQuery(api.loanDebt.listObligations);
   const simulate = useAction(api.loanDebt.simulatePrepayment);
   const [obligationId, setObligationId] = useState<string>("");
@@ -646,10 +692,10 @@ function PrepaymentAmountMode() {
     void simulate({
       obligationId: obligationId as Id<"obligations">,
       scenario: {
-        lumpSumMinorUnits: lumpSum.trim() === "" ? 0 : Number(lumpSum),
-        extraMonthlyMinorUnits: extraMonthly.trim() === "" ? 0 : Number(extraMonthly),
+        lumpSumMinorUnits: lumpSum.trim() === "" ? 0 : parseAmount(lumpSum),
+        extraMonthlyMinorUnits: extraMonthly.trim() === "" ? 0 : parseAmount(extraMonthly),
         mode,
-        prepaymentChargeMinorUnits: charge.trim() === "" ? 0 : Number(charge),
+        prepaymentChargeMinorUnits: charge.trim() === "" ? 0 : parseAmount(charge),
       },
     })
       .then((r) => setResult(r.result))
@@ -690,11 +736,11 @@ function PrepaymentAmountMode() {
               </div>
             )}
             <label style={cell}>
-              Lump-sum prepayment (₹)
+              Lump-sum prepayment ({currency.symbol})
               <input style={f} value={lumpSum} onChange={(e) => setLumpSum(e.target.value)} placeholder="0 if none" />
             </label>
             <label style={cell}>
-              Extra each month (₹)
+              Extra each month ({currency.symbol})
               <input style={f} value={extraMonthly} onChange={(e) => setExtraMonthly(e.target.value)} placeholder="0 if none" />
             </label>
             <label style={cell}>
@@ -705,7 +751,7 @@ function PrepaymentAmountMode() {
               </select>
             </label>
             <label style={cell}>
-              Confirmed prepayment charge (₹)
+              Confirmed prepayment charge ({currency.symbol})
               <input style={f} value={charge} onChange={(e) => setCharge(e.target.value)} placeholder="0 if none" />
             </label>
             <div style={{ gridColumn: "1 / -1", display: "flex", gap: "8px", alignItems: "center" }}>

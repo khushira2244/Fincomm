@@ -730,7 +730,10 @@ function CombinedPlanScreen({
 
   return (
     <>
-      <BackLink onClick={onBack} label="Back to ideas" />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <BackLink onClick={onBack} label="Back to ideas" />
+        <DeleteEntryLink entryId={entryId} onDeleted={onBack} />
+      </div>
       <h1 style={{ fontFamily: fontSerif, fontSize: "24px", margin: "0 0 2px" }}>Your combined plan</h1>
       <div style={{ fontSize: "13px", color: colors.inkSoft }}>{opportunities?.map((o) => o.title).join(" + ")}</div>
 
@@ -814,6 +817,35 @@ function BackLink({ onClick, label }: { onClick: () => void; label: string }) {
   );
 }
 
+// Two-click confirm (no modal) — a first click swaps the label to
+// "Really delete?" and only a second click within a few seconds
+// actually deletes, so a stray click can't silently remove a plan.
+function DeleteEntryLink({ entryId, onDeleted }: { entryId: Id<"sideIncomeEntries">; onDeleted: () => void }) {
+  const remove = useMutation(api.sideIncome.deleteSideIncomeEntry);
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+  return (
+    <span
+      onClick={() => {
+        if (confirming) {
+          void remove({ entryId })
+            .then(onDeleted)
+            .catch(() => setConfirming(false));
+        } else {
+          setConfirming(true);
+        }
+      }}
+      style={{ fontSize: "13px", color: confirming ? FC_RED : colors.inkSoft, cursor: "pointer", textDecoration: "underline" }}
+    >
+      {confirming ? "Really delete this plan?" : "Delete this plan"}
+    </span>
+  );
+}
+
 // =====================================================================
 // Screen 3 — single-option "Getting Started" detail page
 // =====================================================================
@@ -845,7 +877,10 @@ function GettingStartedScreen({
 
   return (
     <>
-      <BackLink onClick={onBack} label="Back to ideas" />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <BackLink onClick={onBack} label="Back to ideas" />
+        <DeleteEntryLink entryId={entryId} onDeleted={onBack} />
+      </div>
       <h1 style={{ fontFamily: fontSerif, fontSize: "24px", margin: "0 0 2px" }}>{title} — Getting Started</h1>
       <div style={{ fontSize: "13px", color: colors.inkSoft }}>{subtitle}</div>
 
