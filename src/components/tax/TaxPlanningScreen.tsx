@@ -198,7 +198,7 @@ function TaxProfileCard() {
   return (
     <Card>
       <div style={{ fontFamily: fontSerif, fontSize: "16px", marginBottom: "2px" }}>Your tax profile</div>
-      <div style={{ fontSize: "12px", color: colors.inkSoft, marginBottom: "12px" }}>
+      <div style={{ fontSize: "12px", color: colors.inkSoft, marginBottom: "10px" }}>
         A few honest approximate figures — we'll use what's already in FinComp for the rest.
       </div>
 
